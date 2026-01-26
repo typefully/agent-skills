@@ -1,0 +1,21 @@
+{
+  "name": "typefully-skills",
+  "owner": {
+    "name": "Typefully",
+    "url": "https://typefully.com"
+  },
+  "metadata": {
+    "description": "Official Typefully skills for AI agents",
+    "version": "1.0.0",
+    "repository": "https://github.com/typefully/agent-skills"
+  },
+  "plugins": [
+    {
+      "name": "typefully",
+      "source": "./skills/typefully",
+      "description": "Draft, schedule, and manage social media posts across X, LinkedIn, Threads, Bluesky, and Mastodon",
+      "strict": false,
+      "skills": ["./skills/typefully"]
+    }
+  ]
+}
