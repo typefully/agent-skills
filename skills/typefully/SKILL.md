@@ -181,6 +181,19 @@ Example: `https://typefully.com/?a=12345&d=67890`
 - `a=12345` → social_set_id
 - `d=67890` → draft_id
 
+## Automation Guidelines
+
+When automating posts, especially on X, follow these rules to keep accounts in good standing:
+
+- **No duplicate content** across multiple accounts
+- **No unsolicited automated replies** - only reply when explicitly requested by the user
+- **No trending manipulation** - don't mass-post about trending topics
+- **No fake engagement** - don't automate likes, reposts, or follows
+- **Respect rate limits** - the API has rate limits, don't spam requests
+- **Drafts are private** - content stays private until published or explicitly shared
+
+When in doubt, create drafts for user review rather than publishing directly.
+
 ## Tips
 
 - **Default to X/Twitter** unless another platform is specified
