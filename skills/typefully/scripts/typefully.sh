@@ -13,14 +13,17 @@ command -v curl >/dev/null 2>&1 || { echo '{"error": "curl is required but not i
 command -v jq >/dev/null 2>&1 || { echo '{"error": "jq is required but not installed"}'; exit 1; }
 command -v perl >/dev/null 2>&1 || { echo '{"error": "perl is required but not installed"}'; exit 1; }
 
-# Check for API key
-if [[ -z "${TYPEFULLY_API_KEY:-}" ]]; then
-  echo '{"error": "TYPEFULLY_API_KEY environment variable is not set. Get your key at https://typefully.com/settings/api"}'
-  exit 1
-fi
+# Check for API key (allow help without it)
+check_api_key() {
+  if [[ -z "${TYPEFULLY_API_KEY:-}" ]]; then
+    echo '{"error": "TYPEFULLY_API_KEY environment variable is not set. Get your key at https://typefully.com/settings/api"}'
+    exit 1
+  fi
+}
 
 # Helper function for API requests
 api_request() {
+  check_api_key
   local method="$1"
   local endpoint="$2"
   local data="${3:-}"
@@ -78,6 +81,9 @@ COMMANDS:
     --title <title>                     Draft title (internal only)
     --schedule <time>                   "now", "next-free-slot", or ISO datetime
     --tags <tag_slugs>                  Comma-separated tag slugs
+    --reply-to <url>                    URL of X post to reply to
+    --community <id>                    X community ID to post to
+    --share                             Generate a public share URL for the draft
 
   update <social_set_id> <draft_id> [options]  Update a draft
     --platform <platforms>              Comma-separated platforms (default: x)
@@ -133,6 +139,15 @@ EXAMPLES:
 
   # Append to existing thread
   ./typefully.sh update 123 456 --append --text "New tweet at the end"
+
+  # Reply to an existing tweet
+  ./typefully.sh create 123 --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
+
+  # Post to an X community
+  ./typefully.sh create 123 --platform x --text "Community post" --community 1493446837214187523
+
+  # Create draft with share URL
+  ./typefully.sh create 123 --platform x --text "Check this out" --share
 
 SETUP:
   1. Get your API key from https://typefully.com/settings/api
@@ -214,6 +229,9 @@ cmd_create() {
   local schedule=""
   local tags=""
   local file=""
+  local reply_to=""
+  local community=""
+  local share="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -222,6 +240,9 @@ cmd_create() {
       --title) title="$2"; shift 2 ;;
       --schedule) schedule="$2"; shift 2 ;;
       --tags) tags="$2"; shift 2 ;;
+      --reply-to) reply_to="$2"; shift 2 ;;
+      --community) community="$2"; shift 2 ;;
+      --share) share="true"; shift ;;
       --file|-f)
         if [[ -f "$2" ]]; then
           file="$2"
@@ -277,7 +298,23 @@ cmd_create() {
       platforms_json+=","
     fi
 
-    platforms_json+="\"$platform\": {\"enabled\": true, \"posts\": $posts_json}"
+    # Add X-specific settings if reply_to or community is set
+    if [[ "$platform" == "x" && ( -n "$reply_to" || -n "$community" ) ]]; then
+      local settings_json="{"
+      local first_setting=true
+      if [[ -n "$reply_to" ]]; then
+        settings_json+="\"reply_to_url\": \"$reply_to\""
+        first_setting=false
+      fi
+      if [[ -n "$community" ]]; then
+        [[ "$first_setting" == "false" ]] && settings_json+=","
+        settings_json+="\"community_id\": \"$community\""
+      fi
+      settings_json+="}"
+      platforms_json+="\"$platform\": {\"enabled\": true, \"posts\": $posts_json, \"settings\": $settings_json}"
+    else
+      platforms_json+="\"$platform\": {\"enabled\": true, \"posts\": $posts_json}"
+    fi
   done
   platforms_json+="}"
 
@@ -313,6 +350,10 @@ cmd_create() {
     done
     tags_json+="]"
     request+=", \"tags\": $tags_json"
+  fi
+
+  if [[ "$share" == "true" ]]; then
+    request+=", \"share\": true"
   fi
 
   request+="}"

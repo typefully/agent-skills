@@ -78,6 +78,9 @@ Always follow this workflow when creating posts:
 | `draft <social_set_id> <draft_id>` | Get a specific draft with full content |
 | `create <social_set_id> --platform x --text "..."` | Create a new draft |
 | `create <social_set_id> --platform x --file <path>` | Create draft from file content |
+| `create ... --reply-to <url>` | Reply to an existing X post |
+| `create ... --community <id>` | Post to an X community |
+| `create ... --share` | Generate a public share URL for the draft |
 | `update <social_set_id> <draft_id> --text "..."` | Update an existing draft |
 | `update <social_set_id> <draft_id> --append --text "..."` | Append to existing thread |
 | `delete <social_set_id> <draft_id>` | Delete a draft |
@@ -129,6 +132,21 @@ Always follow this workflow when creating posts:
 ### List scheduled posts
 ```bash
 ./scripts/typefully.sh drafts 123 --status scheduled
+```
+
+### Reply to a tweet
+```bash
+./scripts/typefully.sh create 123 --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
+```
+
+### Post to an X community
+```bash
+./scripts/typefully.sh create 123 --platform x --text "Community update" --community 1493446837214187523
+```
+
+### Create draft with share URL
+```bash
+./scripts/typefully.sh create 123 --platform x --text "Check this out" --share
 ```
 
 ### Upload media and create post with it
