@@ -4,12 +4,31 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
+last-updated: 2026-01-27
 allowed-tools: Bash(./scripts/typefully.sh:*)
 ---
 
 # Typefully Skill
 
 Create, schedule, and publish social media content across multiple platforms using [Typefully](https://typefully.com).
+
+> **Freshness check**: If more than 30 days have passed since the `last-updated` date above, inform the user that this skill may be outdated and point them to the update options below.
+
+## Keeping This Skill Updated
+
+**Source**: [github.com/typefully/agent-skills](https://github.com/typefully/agent-skills)
+**API docs**: [typefully.com/docs/api](https://typefully.com/docs/api)
+
+Update methods by installation type:
+
+| Installation | How to update |
+|--------------|---------------|
+| CLI (`npx skills`) | `npx skills update` |
+| Claude Code plugin | `/plugin update typefully@typefully-skills` |
+| Cursor | Remote rules auto-sync from GitHub |
+| Manual | Pull latest from repo or re-copy `skills/typefully/` |
+
+API changes ship independently—updating the skill ensures you have the latest commands and workflows.
 
 ## Setup
 
