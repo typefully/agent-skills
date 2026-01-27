@@ -26,11 +26,11 @@ The SKILL.md file documents the workflow and commands that AI agents should foll
 
 The `typefully.sh` script is a self-contained Bash CLI that wraps the Typefully API:
 
-- **Dependencies**: `curl` and `jq`
+- **Dependencies**: `curl`, `jq`, and `perl`
 - **Authentication**: Requires `TYPEFULLY_API_KEY` environment variable
 - **API Base**: `https://api.typefully.com/v2`
 
-Key commands: `me`, `accounts`, `account`, `drafts`, `draft`, `create`, `update`, `delete`, `schedule`, `publish`, `tags`, `tag:create`, `media:upload`, `media:status`
+Key commands: `me`, `social-sets`, `social-set`, `draft:list`, `draft:get`, `draft:create`, `draft:update`, `draft:delete`, `schedule`, `publish`, `tag:list`, `tag:create`, `media:upload`, `media:status`
 
 All commands output JSON. The script uses strict mode (`set -euo pipefail`).
 
@@ -38,8 +38,8 @@ All commands output JSON. The script uses strict mode (`set -euo pipefail`).
 
 ```bash
 export TYPEFULLY_API_KEY=your_key
-./skills/typefully/scripts/typefully.sh accounts
-./skills/typefully/scripts/typefully.sh create <social_set_id> --platform x --text "Test post"
+./skills/typefully/scripts/typefully.sh social-sets
+./skills/typefully/scripts/typefully.sh draft:create <social_set_id> --platform x --text "Test post"
 ```
 
 ## Installation Methods

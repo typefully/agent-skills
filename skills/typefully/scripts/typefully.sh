@@ -63,44 +63,48 @@ USAGE:
   typefully.sh <command> [arguments]
 
 COMMANDS:
-  me                                    Get authenticated user info
-  accounts                              List all social sets (accounts)
-  account <social_set_id>                  Get account details with platforms
+  me                                       Get authenticated user info
+  social-sets                              List all social sets
+  social-set <social_set_id>               Get social set details with platforms
 
-  drafts <social_set_id> [options]         List drafts
-    --status <status>                   Filter by: draft, scheduled, published, error, publishing
-    --tag <tag_slug>                    Filter by tag slug
-    --limit <n>                         Max results (default: 10, max: 50)
+  draft:list <social_set_id> [options]     List drafts
+    --status <status>                      Filter by: draft, scheduled, published, error, publishing
+    --tag <tag_slug>                       Filter by tag slug
+    --sort <order>                         Sort by: created_at, -created_at, updated_at, -updated_at,
+                                           scheduled_date, -scheduled_date, published_at, -published_at
+    --limit <n>                            Max results (default: 10, max: 50)
 
-  draft <social_set_id> <draft_id>         Get a specific draft
+  draft:get <social_set_id> <draft_id>     Get a specific draft
 
-  create <social_set_id> [options]         Create a new draft
-    --platform <platforms>              Comma-separated: x,linkedin,threads,bluesky,mastodon
-    --text <text>                       Post content (use --- on its own line for threads)
-    --file, -f <path>                   Read content from file instead of --text
-    --title <title>                     Draft title (internal only)
-    --schedule <time>                   "now", "next-free-slot", or ISO datetime
-    --tags <tag_slugs>                  Comma-separated tag slugs
-    --reply-to <url>                    URL of X post to reply to
-    --community <id>                    X community ID to post to
-    --share                             Generate a public share URL for the draft
+  draft:create <social_set_id> [options]   Create a new draft
+    --platform <platforms>                 Comma-separated: x,linkedin,threads,bluesky,mastodon
+    --text <text>                          Post content (use --- on its own line for threads)
+    --file, -f <path>                      Read content from file instead of --text
+    --media <media_ids>                    Comma-separated media IDs to attach
+    --title <title>                        Draft title (internal only)
+    --schedule <time>                      "now", "next-free-slot", or ISO datetime
+    --tags <tag_slugs>                     Comma-separated tag slugs
+    --reply-to <url>                       URL of X post to reply to
+    --community <id>                       X community ID to post to
+    --share                                Generate a public share URL for the draft
 
-  update <social_set_id> <draft_id> [options]  Update a draft
-    --platform <platforms>              Comma-separated platforms (default: x)
-    --text <text>                       New post content
-    --file, -f <path>                   Read content from file instead of --text
-    --append, -a                        Append to existing thread instead of replacing
-    --title <title>                     New draft title
-    --schedule <time>                   "now", "next-free-slot", or ISO datetime
+  draft:update <social_set_id> <draft_id> [options]  Update a draft
+    --platform <platforms>                 Comma-separated platforms (default: x)
+    --text <text>                          New post content
+    --file, -f <path>                      Read content from file instead of --text
+    --media <media_ids>                    Comma-separated media IDs to attach
+    --append, -a                           Append to existing thread instead of replacing
+    --title <title>                        New draft title
+    --schedule <time>                      "now", "next-free-slot", or ISO datetime
 
-  delete <social_set_id> <draft_id>        Delete a draft
+  draft:delete <social_set_id> <draft_id>  Delete a draft
 
   schedule <social_set_id> <draft_id> [options]  Schedule a draft
-    --time <time>                       "next-free-slot" or ISO datetime (required)
+    --time <time>                          "next-free-slot" or ISO datetime (required)
 
   publish <social_set_id> <draft_id>       Publish a draft immediately
 
-  tags <social_set_id>                     List all tags
+  tag:list <social_set_id>                 List all tags
   tag:create <social_set_id> --name <name> Create a new tag
 
   media:upload <social_set_id> <file>      Upload media file (returns media_id)
@@ -110,44 +114,51 @@ EXAMPLES:
   # Get your user info
   ./typefully.sh me
 
-  # List all accounts
-  ./typefully.sh accounts
+  # List all social sets
+  ./typefully.sh social-sets
 
   # Create a tweet
-  ./typefully.sh create 123 --platform x --text "Hello world!"
+  ./typefully.sh draft:create 123 --platform x --text "Hello world!"
 
   # Create a cross-platform post
-  ./typefully.sh create 123 --platform x,linkedin --text "Big announcement!"
+  ./typefully.sh draft:create 123 --platform x,linkedin --text "Big announcement!"
 
   # Create a thread (use --- on its own line to separate posts)
-  ./typefully.sh create 123 --platform x --text $'First tweet\n---\nSecond tweet\n---\nThird tweet'
+  ./typefully.sh draft:create 123 --platform x --text $'First tweet\n---\nSecond tweet\n---\nThird tweet'
 
   # Create from file
-  ./typefully.sh create 123 --platform x --file ./thread.txt
+  ./typefully.sh draft:create 123 --platform x --file ./thread.txt
 
   # Schedule for next available slot
-  ./typefully.sh create 123 --platform x --text "Scheduled post" --schedule next-free-slot
+  ./typefully.sh draft:create 123 --platform x --text "Scheduled post" --schedule next-free-slot
 
   # Schedule for specific time
-  ./typefully.sh create 123 --platform x --text "Timed post" --schedule "2025-01-20T14:00:00Z"
+  ./typefully.sh draft:create 123 --platform x --text "Timed post" --schedule "2025-01-20T14:00:00Z"
 
-  # List scheduled drafts
-  ./typefully.sh drafts 123 --status scheduled
+  # List scheduled drafts sorted by scheduled date
+  ./typefully.sh draft:list 123 --status scheduled --sort scheduled_date
 
   # Publish a draft immediately
   ./typefully.sh publish 123 456
 
   # Append to existing thread
-  ./typefully.sh update 123 456 --append --text "New tweet at the end"
+  ./typefully.sh draft:update 123 456 --append --text "New tweet at the end"
 
   # Reply to an existing tweet
-  ./typefully.sh create 123 --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
+  ./typefully.sh draft:create 123 --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
 
   # Post to an X community
-  ./typefully.sh create 123 --platform x --text "Community post" --community 1493446837214187523
+  ./typefully.sh draft:create 123 --platform x --text "Community post" --community 1493446837214187523
 
   # Create draft with share URL
-  ./typefully.sh create 123 --platform x --text "Check this out" --share
+  ./typefully.sh draft:create 123 --platform x --text "Check this out" --share
+
+  # Upload media and create post with it
+  ./typefully.sh media:upload 123 ./image.jpg
+  # Returns: {"media_id": "abc-123", ...}
+  ./typefully.sh media:status 123 abc-123
+  # Wait for status: "processed"
+  ./typefully.sh draft:create 123 --platform x --text "Check out this image!" --media abc-123
 
 SETUP:
   1. Get your API key from https://typefully.com/settings/api
@@ -160,11 +171,11 @@ cmd_me() {
   api_request GET "/me"
 }
 
-cmd_accounts() {
+cmd_social_sets() {
   api_request GET "/social-sets?limit=50"
 }
 
-cmd_account() {
+cmd_social_set() {
   local social_set_id="${1:-}"
   if [[ -z "$social_set_id" ]]; then
     echo '{"error": "social_set_id is required"}'
@@ -173,7 +184,7 @@ cmd_account() {
   api_request GET "/social-sets/$social_set_id"
 }
 
-cmd_drafts() {
+cmd_draft_list() {
   local social_set_id="${1:-}"
   shift || true
 
@@ -184,12 +195,14 @@ cmd_drafts() {
 
   local status=""
   local tag=""
+  local sort=""
   local limit="10"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --status) status="$2"; shift 2 ;;
       --tag) tag="$2"; shift 2 ;;
+      --sort) sort="$2"; shift 2 ;;
       --limit) limit="$2"; shift 2 ;;
       *) echo "{\"error\": \"Unknown option: $1\"}"; exit 1 ;;
     esac
@@ -198,11 +211,12 @@ cmd_drafts() {
   local query="limit=$limit"
   [[ -n "$status" ]] && query="$query&status=$status"
   [[ -n "$tag" ]] && query="$query&tag=$tag"
+  [[ -n "$sort" ]] && query="$query&order_by=$sort"
 
   api_request GET "/social-sets/$social_set_id/drafts?$query"
 }
 
-cmd_draft() {
+cmd_draft_get() {
   local social_set_id="${1:-}"
   local draft_id="${2:-}"
 
@@ -214,7 +228,7 @@ cmd_draft() {
   api_request GET "/social-sets/$social_set_id/drafts/$draft_id"
 }
 
-cmd_create() {
+cmd_draft_create() {
   local social_set_id="${1:-}"
   shift || true
 
@@ -232,6 +246,7 @@ cmd_create() {
   local reply_to=""
   local community=""
   local share="false"
+  local media=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -243,6 +258,7 @@ cmd_create() {
       --reply-to) reply_to="$2"; shift 2 ;;
       --community) community="$2"; shift 2 ;;
       --share) share="true"; shift ;;
+      --media) media="$2"; shift 2 ;;
       --file|-f)
         if [[ -f "$2" ]]; then
           file="$2"
@@ -265,6 +281,24 @@ cmd_create() {
     exit 1
   fi
 
+  # Build media_ids JSON array if media is provided
+  local media_json=""
+  if [[ -n "$media" ]]; then
+    media_json="["
+    local first_media=true
+    IFS=',' read -ra MEDIA_ARRAY <<< "$media"
+    for media_id in "${MEDIA_ARRAY[@]}"; do
+      media_id=$(echo "$media_id" | xargs)
+      if [[ "$first_media" == "true" ]]; then
+        first_media=false
+      else
+        media_json+=","
+      fi
+      media_json+="\"$media_id\""
+    done
+    media_json+="]"
+  fi
+
   # Split text into posts array (thread support via --- delimiter on its own line)
   local posts_json="["
   local first_post=true
@@ -280,7 +314,14 @@ cmd_create() {
     else
       posts_json+=","
     fi
-    posts_json+="{\"text\": $escaped_post}"
+    # Add media_ids only to the first post
+    if [[ -n "$media_json" && "$first_post" == "false" ]]; then
+      # This is the first post (first_post was just set to false)
+      posts_json+="{\"text\": $escaped_post, \"media_ids\": $media_json}"
+      media_json=""  # Clear so subsequent posts don't get media
+    else
+      posts_json+="{\"text\": $escaped_post}"
+    fi
   done < <(printf '%s\0' "$text" | perl -0777 -pe 's/\n---\n/\0/g')
 
   posts_json+="]"
@@ -361,7 +402,7 @@ cmd_create() {
   api_request POST "/social-sets/$social_set_id/drafts" "$request"
 }
 
-cmd_update() {
+cmd_draft_update() {
   local social_set_id="${1:-}"
   local draft_id="${2:-}"
   shift 2 || true
@@ -377,6 +418,7 @@ cmd_update() {
   local schedule=""
   local file=""
   local append="false"
+  local media=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -384,6 +426,7 @@ cmd_update() {
       --text) text="$2"; shift 2 ;;
       --title) title="$2"; shift 2 ;;
       --schedule) schedule="$2"; shift 2 ;;
+      --media) media="$2"; shift 2 ;;
       --file|-f)
         if [[ -f "$2" ]]; then
           file="$2"
@@ -400,6 +443,24 @@ cmd_update() {
   # Read text from file if --file was provided
   if [[ -n "$file" ]]; then
     text=$(cat "$file")
+  fi
+
+  # Build media_ids JSON array if media is provided
+  local media_json=""
+  if [[ -n "$media" ]]; then
+    media_json="["
+    local first_media=true
+    IFS=',' read -ra MEDIA_ARRAY <<< "$media"
+    for media_id in "${MEDIA_ARRAY[@]}"; do
+      media_id=$(echo "$media_id" | xargs)
+      if [[ "$first_media" == "true" ]]; then
+        first_media=false
+      else
+        media_json+=","
+      fi
+      media_json+="\"$media_id\""
+    done
+    media_json+="]"
   fi
 
   local request="{"
@@ -420,12 +481,16 @@ cmd_update() {
       local existing_posts
       existing_posts=$(echo "$existing" | jq -c '[.platforms | to_entries[] | select(.value.enabled == true) | .value.posts][0] // []')
 
-      # Escape new text and append
+      # Escape new text and append (with optional media)
       local escaped_text
       escaped_text=$(printf '%s' "$text" | jq -Rs '.')
 
       # Append new post to existing posts array
-      posts_json=$(printf '%s' "$existing_posts" | jq -c ". + [{\"text\": $escaped_text}]")
+      if [[ -n "$media_json" ]]; then
+        posts_json=$(printf '%s' "$existing_posts" | jq -c ". + [{\"text\": $escaped_text, \"media_ids\": $media_json}]")
+      else
+        posts_json=$(printf '%s' "$existing_posts" | jq -c ". + [{\"text\": $escaped_text}]")
+      fi
     else
       # Split text into posts array (thread support via --- delimiter on its own line)
       posts_json="["
@@ -442,7 +507,13 @@ cmd_update() {
         else
           posts_json+=","
         fi
-        posts_json+="{\"text\": $escaped_post}"
+        # Add media_ids only to the first post
+        if [[ -n "$media_json" && "$first_post" == "false" ]]; then
+          posts_json+="{\"text\": $escaped_post, \"media_ids\": $media_json}"
+          media_json=""  # Clear so subsequent posts don't get media
+        else
+          posts_json+="{\"text\": $escaped_post}"
+        fi
       done < <(printf '%s\0' "$text" | perl -0777 -pe 's/\n---\n/\0/g')
 
       posts_json+="]"
@@ -492,7 +563,7 @@ cmd_update() {
   api_request PATCH "/social-sets/$social_set_id/drafts/$draft_id" "$request"
 }
 
-cmd_delete() {
+cmd_draft_delete() {
   local social_set_id="${1:-}"
   local draft_id="${2:-}"
 
@@ -546,7 +617,7 @@ cmd_publish() {
   api_request PATCH "/social-sets/$social_set_id/drafts/$draft_id" "$request"
 }
 
-cmd_tags() {
+cmd_tag_list() {
   local social_set_id="${1:-}"
 
   if [[ -z "$social_set_id" ]]; then
@@ -662,16 +733,16 @@ main() {
 
   case "$command" in
     me) cmd_me ;;
-    accounts) cmd_accounts ;;
-    account) cmd_account "$@" ;;
-    drafts) cmd_drafts "$@" ;;
-    draft) cmd_draft "$@" ;;
-    create) cmd_create "$@" ;;
-    update) cmd_update "$@" ;;
-    delete) cmd_delete "$@" ;;
+    social-sets) cmd_social_sets ;;
+    social-set) cmd_social_set "$@" ;;
+    draft:list) cmd_draft_list "$@" ;;
+    draft:get) cmd_draft_get "$@" ;;
+    draft:create) cmd_draft_create "$@" ;;
+    draft:update) cmd_draft_update "$@" ;;
+    draft:delete) cmd_draft_delete "$@" ;;
     schedule) cmd_schedule "$@" ;;
     publish) cmd_publish "$@" ;;
-    tags) cmd_tags "$@" ;;
+    tag:list) cmd_tag_list "$@" ;;
     tag:create) cmd_tag_create "$@" ;;
     media:upload) cmd_media_upload "$@" ;;
     media:status) cmd_media_status "$@" ;;
