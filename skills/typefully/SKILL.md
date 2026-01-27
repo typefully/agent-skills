@@ -23,7 +23,7 @@ Update methods by installation type:
 
 | Installation | How to update |
 |--------------|---------------|
-| CLI (`npx skills`) | `npx skills add typefully/agent-skills` |
+| CLI (`npx skills`) | `npx skills update` |
 | Claude Code plugin | `/plugin update typefully@typefully-skills` |
 | Cursor | Remote rules auto-sync from GitHub |
 | Manual | Pull latest from repo or re-copy `skills/typefully/` |
