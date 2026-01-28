@@ -52,59 +52,71 @@ Before using this skill, ensure:
 
 The Typefully API uses the term "social set" to refer to what users commonly call an "account". A social set contains the connected social media platforms (X, LinkedIn, Threads, etc.) for a single identity.
 
+**The CLI supports a default social set** - once configured, most commands work without specifying the social_set_id.
+
 When determining which social set to use:
 
-1. **Check project context first** - Look for configuration in project files like `CLAUDE.md` or `AGENTS.md`. Examples of how users might configure this:
+1. **Check for a configured default first** - Run `config:show` to see if a default is already set:
+   ```bash
+   ./scripts/typefully.js config:show
+   ```
+   If `default_social_set` is configured, the CLI uses it automatically when you omit the social_set_id.
+
+2. **Check project context** - Look for configuration in project files like `CLAUDE.md` or `AGENTS.md`:
 
    ```markdown
    ## Typefully
    Default social set ID: 12345
    ```
 
-   ```markdown
-   ## Social Media
-   Use Typefully account ID 67890 for all posts.
+3. **Single social set shortcut** - If the user only has one social set and no default is configured, use it automatically
+
+4. **Multiple social sets, no default** - Ask the user which to use, then **offer to save their choice as the default**:
+   ```bash
+   ./scripts/typefully.js config:set-default
    ```
+   This command lists available social sets and saves the choice to the config file.
 
-   ```markdown
-   ## Configuration
-   - Typefully social_set_id: 11111
-   ```
-
-2. **Reuse previously resolved social set** - If determined earlier in the session, use it without asking again
-
-3. **Ask only when ambiguous** - If multiple social sets exist and no default is configured, ask the user which to use
-
-4. **Single social set shortcut** - If the user only has one social set, use it automatically
+5. **Reuse previously resolved social set** - If determined earlier in the session, use it without asking again
 
 ## Common Actions
 
 | User says... | Action |
 |--------------|--------|
-| "Draft a tweet about X" | `drafts:create <social_set_id> --text "..."` |
-| "Post this to LinkedIn" | `drafts:create <social_set_id> --platform linkedin --text "..."` |
-| "What's scheduled?" | `drafts:list <social_set_id> --status scheduled` |
-| "Show my recent posts" | `drafts:list <social_set_id> --status published` |
+| "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
+| "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
+| "What's scheduled?" | `drafts:list --status scheduled` |
+| "Show my recent posts" | `drafts:list --status published` |
 | "Schedule this for tomorrow" | `drafts:create ... --schedule "2025-01-21T09:00:00Z"` |
-| "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <social_set_id> <draft_id>` |
+| "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <draft_id> --use-default` |
 | "Add notes/ideas to the draft" | `drafts:create ... --scratchpad "Your notes here"` |
 
 ## Workflow
 
-Always follow this workflow when creating posts:
+Follow this workflow when creating posts:
 
-1. **List social sets first** to get the `social_set_id`:
+1. **Check if a default social set is configured**:
+   ```bash
+   ./scripts/typefully.js config:show
+   ```
+   If `default_social_set` shows an ID, skip to step 3.
+
+2. **If no default, list social sets** to find available options:
    ```bash
    ./scripts/typefully.js social-sets:list
    ```
-
-2. **Create drafts** using the social_set_id from step 1:
+   If multiple exist, ask the user which to use and offer to set it as default:
    ```bash
-   ./scripts/typefully.js drafts:create <social_set_id> --text "Your post"
+   ./scripts/typefully.js config:set-default
+   ```
+
+3. **Create drafts** (social_set_id is optional if default is configured):
+   ```bash
+   ./scripts/typefully.js drafts:create --text "Your post"
    ```
    Note: If `--platform` is omitted, the first connected platform is auto-selected.
 
-3. **Schedule or publish** as needed
+4. **Schedule or publish** as needed
 
 ## Commands Reference
 
@@ -118,136 +130,163 @@ Always follow this workflow when creating posts:
 
 ### Drafts
 
+All drafts commands support an optional `[social_set_id]` - if omitted, the configured default is used.
+**Safety note**: For commands that take `[social_set_id] <draft_id>`, if you pass only a single argument (the draft_id) while a default social set is configured, you must add `--use-default` to confirm intent.
+
 | Command | Description |
 |---------|-------------|
-| `drafts:list <social_set_id>` | List drafts (add `--status scheduled` to filter, `--sort` to order) |
-| `drafts:get <social_set_id> <draft_id>` | Get a specific draft with full content |
-| `drafts:create <social_set_id> --text "..."` | Create a new draft (auto-selects platform) |
-| `drafts:create <social_set_id> --platform x --text "..."` | Create a draft for specific platform(s) |
-| `drafts:create <social_set_id> --all --text "..."` | Create a draft for all connected platforms |
-| `drafts:create <social_set_id> --file <path>` | Create draft from file content |
+| `drafts:list [social_set_id]` | List drafts (add `--status scheduled` to filter, `--sort` to order) |
+| `drafts:get [social_set_id] <draft_id>` | Get a specific draft with full content (single-arg requires `--use-default` if a default is configured) |
+| `drafts:create [social_set_id] --text "..."` | Create a new draft (auto-selects platform) |
+| `drafts:create [social_set_id] --platform x --text "..."` | Create a draft for specific platform(s) |
+| `drafts:create [social_set_id] --all --text "..."` | Create a draft for all connected platforms |
+| `drafts:create [social_set_id] --file <path>` | Create draft from file content |
 | `drafts:create ... --media <media_ids>` | Create draft with attached media |
 | `drafts:create ... --reply-to <url>` | Reply to an existing X post |
 | `drafts:create ... --community <id>` | Post to an X community |
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
-| `drafts:update <social_set_id> <draft_id> --text "..."` | Update an existing draft |
+| `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
-| `drafts:update <social_set_id> <draft_id> --append --text "..."` | Append to existing thread |
-| `drafts:delete <social_set_id> <draft_id>` | Delete a draft |
+| `drafts:update [social_set_id] <draft_id> --append --text "..."` | Append to existing thread |
 
 ### Scheduling & Publishing
 
+**Safety note**: These commands require `--use-default` when using the default social set with a single argument (to prevent accidental operations from ambiguous syntax).
+
 | Command | Description |
 |---------|-------------|
+| `drafts:delete <social_set_id> <draft_id>` | Delete a draft (explicit IDs) |
+| `drafts:delete <draft_id> --use-default` | Delete using default social set |
 | `drafts:schedule <social_set_id> <draft_id> --time next-free-slot` | Schedule to next available slot |
-| `drafts:schedule <social_set_id> <draft_id> --time "2025-01-20T14:00:00Z"` | Schedule for specific time |
+| `drafts:schedule <draft_id> --time next-free-slot --use-default` | Schedule using default social set |
 | `drafts:publish <social_set_id> <draft_id>` | Publish immediately |
+| `drafts:publish <draft_id> --use-default` | Publish using default social set |
 
 ### Tags
 
 | Command | Description |
 |---------|-------------|
-| `tags:list <social_set_id>` | List all tags |
-| `tags:create <social_set_id> --name "Tag Name"` | Create a new tag |
+| `tags:list [social_set_id]` | List all tags |
+| `tags:create [social_set_id] --name "Tag Name"` | Create a new tag |
 
 ### Media
 
 | Command | Description |
 |---------|-------------|
-| `media:upload <social_set_id> <file_path>` | Upload media, wait for processing, return ready media_id |
+| `media:upload [social_set_id] <file_path>` | Upload media, wait for processing, return ready media_id |
 | `media:upload ... --no-wait` | Upload and return immediately (use media:status to poll) |
 | `media:upload ... --timeout <seconds>` | Set custom timeout (default: 60) |
-| `media:status <social_set_id> <media_id>` | Check media upload status |
+| `media:status [social_set_id] <media_id>` | Check media upload status |
 
 ### Setup & Configuration
 
 | Command | Description |
 |---------|-------------|
-| `setup` | Interactive setup - prompts for API key and storage location |
-| `setup --key <key> --location <global\|local>` | Non-interactive setup for scripts/CI |
-| `config:show` | Show current config and API key source |
+| `setup` | Interactive setup - prompts for API key, storage location, and default social set |
+| `setup --key <key> --location <global\|local>` | Non-interactive setup for scripts/CI (auto-selects default if only one social set) |
+| `setup --key <key> --default-social-set <id>` | Non-interactive setup with explicit default social set |
+| `setup --key <key> --no-default` | Non-interactive setup, skip default social set selection |
+| `config:show` | Show current config, API key source, and default social set |
+| `config:set-default [social_set_id]` | Set default social set (interactive if ID omitted) |
 
 ## Examples
 
-### Create a tweet
+### Set up default social set
+```bash
+# Check current config
+./scripts/typefully.js config:show
+
+# Set default (interactive - lists available social sets)
+./scripts/typefully.js config:set-default
+
+# Set default (non-interactive)
+./scripts/typefully.js config:set-default 123 --location global
+```
+
+### Create a tweet (using default social set)
+```bash
+./scripts/typefully.js drafts:create --text "Hello, world!"
+```
+
+### Create a tweet with explicit social_set_id
 ```bash
 ./scripts/typefully.js drafts:create 123 --text "Hello, world!"
 ```
 
 ### Create a cross-platform post (specific platforms)
 ```bash
-./scripts/typefully.js drafts:create 123 --platform x,linkedin,threads --text "Big announcement!"
+./scripts/typefully.js drafts:create --platform x,linkedin,threads --text "Big announcement!"
 ```
 
 ### Create a post on all connected platforms
 ```bash
-./scripts/typefully.js drafts:create 123 --all --text "Posting everywhere!"
+./scripts/typefully.js drafts:create --all --text "Posting everywhere!"
 ```
 
 ### Create and schedule for next slot
 ```bash
-./scripts/typefully.js drafts:create 123 --text "Scheduled post" --schedule next-free-slot
+./scripts/typefully.js drafts:create --text "Scheduled post" --schedule next-free-slot
 ```
 
 ### Create with tags
 ```bash
-./scripts/typefully.js drafts:create 123 --text "Marketing post" --tags marketing,product
+./scripts/typefully.js drafts:create --text "Marketing post" --tags marketing,product
 ```
 
 ### List scheduled posts sorted by date
 ```bash
-./scripts/typefully.js drafts:list 123 --status scheduled --sort scheduled_date
+./scripts/typefully.js drafts:list --status scheduled --sort scheduled_date
 ```
 
 ### Reply to a tweet
 ```bash
-./scripts/typefully.js drafts:create 123 --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
+./scripts/typefully.js drafts:create --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
 ```
 
 ### Post to an X community
 ```bash
-./scripts/typefully.js drafts:create 123 --platform x --text "Community update" --community 1493446837214187523
+./scripts/typefully.js drafts:create --platform x --text "Community update" --community 1493446837214187523
 ```
 
 ### Create draft with share URL
 ```bash
-./scripts/typefully.js drafts:create 123 --text "Check this out" --share
+./scripts/typefully.js drafts:create --text "Check this out" --share
 ```
 
 ### Create draft with scratchpad notes
 ```bash
-./scripts/typefully.js drafts:create 123 --text "Launching next week!" --scratchpad "Draft for product launch. Coordinate with marketing team before publishing."
+./scripts/typefully.js drafts:create --text "Launching next week!" --scratchpad "Draft for product launch. Coordinate with marketing team before publishing."
 ```
 
 ### Upload media and create post with it
 ```bash
 # Single command handles upload + polling - returns when ready!
-./scripts/typefully.js media:upload 123 ./image.jpg
+./scripts/typefully.js media:upload ./image.jpg
 # Returns: {"media_id": "abc-123-def", "status": "ready", "message": "Media uploaded and ready to use"}
 
 # Create post with the media attached
-./scripts/typefully.js drafts:create 123 --text "Check out this image!" --media abc-123-def
+./scripts/typefully.js drafts:create --text "Check out this image!" --media abc-123-def
 ```
 
 ### Upload multiple media files
 ```bash
 # Upload each file (each waits for processing)
-./scripts/typefully.js media:upload 123 ./photo1.jpg  # Returns media_id: id1
-./scripts/typefully.js media:upload 123 ./photo2.jpg  # Returns media_id: id2
+./scripts/typefully.js media:upload ./photo1.jpg  # Returns media_id: id1
+./scripts/typefully.js media:upload ./photo2.jpg  # Returns media_id: id2
 
 # Create post with multiple media (comma-separated)
-./scripts/typefully.js drafts:create 123 --text "Photo dump!" --media id1,id2
+./scripts/typefully.js drafts:create --text "Photo dump!" --media id1,id2
 ```
 
 ### Add media to an existing draft
 ```bash
 # Upload media
-./scripts/typefully.js media:upload 123 ./new-image.jpg  # Returns media_id: xyz
+./scripts/typefully.js media:upload ./new-image.jpg  # Returns media_id: xyz
 
-# Update draft with media
-./scripts/typefully.js drafts:update 123 456 --text "Updated post with image" --media xyz
+# Update draft with media (456 is the draft_id)
+./scripts/typefully.js drafts:update 456 --text "Updated post with image" --media xyz --use-default
 ```
 
 ### Setup (interactive)
@@ -257,7 +296,14 @@ Always follow this workflow when creating posts:
 
 ### Setup (non-interactive, for scripts/CI)
 ```bash
+# Auto-selects default social set if only one exists
 ./scripts/typefully.js setup --key typ_xxx --location global
+
+# With explicit default social set
+./scripts/typefully.js setup --key typ_xxx --location global --default-social-set 123
+
+# Skip default social set selection entirely
+./scripts/typefully.js setup --key typ_xxx --no-default
 ```
 
 ## Platform Names
