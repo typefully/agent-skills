@@ -27,7 +27,7 @@ Skills are markdown files that give AI agents specialized knowledge and workflow
 > ## Typefully
 > Default social_set_id: 12345
 > ```
-> Find your social_set_id by running `./scripts/typefully.sh accounts` after setting your API key.
+> Find your social_set_id by running `./scripts/typefully.js social-sets:list` after setting your API key.
 
 ### CLI (Recommended)
 
@@ -91,17 +91,10 @@ export TYPEFULLY_API_KEY=your_key_here
 
 To persist across sessions, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
 
-### "curl is required but not installed" / "jq is required but not installed"
+### "Node.js is required"
 
-Install the missing dependencies:
-
-```bash
-# macOS
-brew install curl jq
-
-# Ubuntu/Debian
-sudo apt-get install curl jq
-```
+The CLI is a zero-dependency Node.js script and requires Node.js 18+ (for built-in `fetch`).
+Install a recent Node.js version, then retry your command.
 
 ### API errors (401, 403)
 
@@ -110,8 +103,8 @@ sudo apt-get install curl jq
 
 ### Drafts not appearing
 
-- Make sure you're using the correct `social_set_id` (run `./scripts/typefully.sh accounts` to list them)
-- Check the draft status with `./scripts/typefully.sh drafts <social_set_id>`
+- Make sure you're using the correct `social_set_id` (run `./scripts/typefully.js social-sets:list` to list them)
+- Check the draft status with `./scripts/typefully.js drafts:list <social_set_id>`
 
 ## Alternative: MCP Server
 

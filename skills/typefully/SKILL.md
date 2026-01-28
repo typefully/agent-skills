@@ -34,12 +34,19 @@ API changes ship independently—updating the skill ensures you have the latest 
 
 Before using this skill, ensure:
 
-1. **API Key**: Set the `TYPEFULLY_API_KEY` environment variable
+1. **API Key**: Run the setup command to configure your API key securely
    - Get your key at https://typefully.com/?settings=api
-   - Export it: `export TYPEFULLY_API_KEY=your_key`
-   - Or save it permanently: `./scripts/typefully.js config:set-key your_key`
+   - Run: `<skill-path>/scripts/typefully.js setup` (where `<skill-path>` is the directory containing this SKILL.md)
+   - Or set environment variable: `export TYPEFULLY_API_KEY=your_key`
 
 2. **Requirements**: Node.js 18+ (for built-in fetch API). No other dependencies needed.
+
+**Config priority** (highest to lowest):
+1. `TYPEFULLY_API_KEY` environment variable
+2. `./.typefully/config.json` (project-local, in user's working directory)
+3. `~/.config/typefully/config.json` (user-global)
+
+> **Note for agents**: All script paths in this document (e.g., `./scripts/typefully.js`) are relative to the skill directory where this SKILL.md file is located. Resolve them accordingly based on where the skill is installed.
 
 ## Social Sets
 
@@ -154,11 +161,12 @@ Always follow this workflow when creating posts:
 | `media:upload ... --timeout <seconds>` | Set custom timeout (default: 60) |
 | `media:status <social_set_id> <media_id>` | Check media upload status |
 
-### Configuration
+### Setup & Configuration
 
 | Command | Description |
 |---------|-------------|
-| `config:set-key <api_key>` | Save API key to ~/.config/typefully/.env |
+| `setup` | Interactive setup - prompts for API key and storage location |
+| `setup --key <key> --location <global\|local>` | Non-interactive setup for scripts/CI |
 | `config:show` | Show current config and API key source |
 
 ## Examples
@@ -242,9 +250,14 @@ Always follow this workflow when creating posts:
 ./scripts/typefully.js drafts:update 123 456 --text "Updated post with image" --media xyz
 ```
 
-### Save API key for future use
+### Setup (interactive)
 ```bash
-./scripts/typefully.js config:set-key your_api_key_here
+./scripts/typefully.js setup
+```
+
+### Setup (non-interactive, for scripts/CI)
+```bash
+./scripts/typefully.js setup --key typ_xxx --location global
 ```
 
 ## Platform Names

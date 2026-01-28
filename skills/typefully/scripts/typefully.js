@@ -10,10 +10,13 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const readline = require('readline');
 
 const API_BASE = 'https://api.typefully.com/v2';
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'typefully');
-const CONFIG_FILE = path.join(CONFIG_DIR, '.env');
+const GLOBAL_CONFIG_DIR = path.join(os.homedir(), '.config', 'typefully');
+const GLOBAL_CONFIG_FILE = path.join(GLOBAL_CONFIG_DIR, 'config.json');
+const LOCAL_CONFIG_DIR = '.typefully';
+const LOCAL_CONFIG_FILE = path.join(LOCAL_CONFIG_DIR, 'config.json');
 const API_KEY_URL = 'https://typefully.com/?settings=api';
 
 // Content-type mapping for media uploads
@@ -41,35 +44,14 @@ function error(message, details = {}) {
   process.exit(1);
 }
 
-function findGitRoot(startDir) {
-  let dir = startDir;
-  while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, '.git'))) {
-      return dir;
+function readConfigFile(configPath) {
+  try {
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      return JSON.parse(content);
     }
-    dir = path.dirname(dir);
-  }
-  return null;
-}
-
-function findEnvFile(startDir) {
-  const gitRoot = findGitRoot(startDir);
-  const stopDir = gitRoot || os.homedir();
-
-  let dir = startDir;
-  while (true) {
-    const envPath = path.join(dir, '.env');
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, 'utf-8');
-      const match = content.match(/^TYPEFULLY_API_KEY=(.+)$/m);
-      if (match) {
-        return { path: envPath, key: match[1].trim() };
-      }
-    }
-    if (dir === stopDir || dir === path.dirname(dir)) {
-      break;
-    }
-    dir = path.dirname(dir);
+  } catch {
+    // Invalid JSON or read error - ignore
   }
   return null;
 }
@@ -77,22 +59,20 @@ function findEnvFile(startDir) {
 function getApiKey() {
   // Priority 1: Environment variable
   if (process.env.TYPEFULLY_API_KEY) {
-    return { source: 'env', key: process.env.TYPEFULLY_API_KEY };
+    return { source: 'environment variable', key: process.env.TYPEFULLY_API_KEY };
   }
 
-  // Priority 2-3: Walk up directory tree from cwd looking for .env files
-  const localEnv = findEnvFile(process.cwd());
-  if (localEnv) {
-    return { source: localEnv.path, key: localEnv.key };
+  // Priority 2: Project-local config (./.typefully/config.json)
+  const localConfigPath = path.join(process.cwd(), LOCAL_CONFIG_FILE);
+  const localConfig = readConfigFile(localConfigPath);
+  if (localConfig?.apiKey) {
+    return { source: localConfigPath, key: localConfig.apiKey };
   }
 
-  // Priority 4: User-level config (~/.config/typefully/.env)
-  if (fs.existsSync(CONFIG_FILE)) {
-    const content = fs.readFileSync(CONFIG_FILE, 'utf-8');
-    const match = content.match(/^TYPEFULLY_API_KEY=(.+)$/m);
-    if (match) {
-      return { source: CONFIG_FILE, key: match[1].trim() };
-    }
+  // Priority 3: User-global config (~/.config/typefully/config.json)
+  const globalConfig = readConfigFile(GLOBAL_CONFIG_FILE);
+  if (globalConfig?.apiKey) {
+    return { source: GLOBAL_CONFIG_FILE, key: globalConfig.apiKey };
   }
 
   return null;
@@ -101,8 +81,8 @@ function getApiKey() {
 function requireApiKey() {
   const result = getApiKey();
   if (!result) {
-    error(`TYPEFULLY_API_KEY not found. Get your key at ${API_KEY_URL}`, {
-      hint: 'Set via: export TYPEFULLY_API_KEY=xxx or run: ./typefully.js config:set-key YOUR_KEY'
+    error(`API key not found. Get your key at ${API_KEY_URL}`, {
+      hint: 'Run: typefully.js setup'
     });
   }
   return result.key;
@@ -247,26 +227,94 @@ async function cmdSocialSetsGet(args) {
   output(data);
 }
 
-async function cmdConfigSetKey(args) {
+function prompt(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stderr, // Use stderr so JSON output stays clean on stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+function writeConfig(configPath, config) {
+  const configDir = path.dirname(configPath);
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+}
+
+async function cmdSetup(args) {
   const parsed = parseArgs(args);
-  const apiKey = parsed._positional[0];
+
+  // Check if running in non-interactive mode (key provided as argument)
+  let apiKey = parsed._positional[0] || parsed.key;
+  let location = parsed.location || parsed.scope;
+
+  // If key provided via argument, skip interactive prompt
+  if (!apiKey) {
+    console.error('Typefully CLI Setup');
+    console.error('');
+    console.error(`Get your API key at: ${API_KEY_URL}`);
+    console.error('');
+    apiKey = await prompt('Enter your Typefully API key: ');
+  }
 
   if (!apiKey) {
-    error('API key is required', { usage: './typefully.js config:set-key YOUR_API_KEY' });
+    error('API key is required');
   }
 
-  // Create config directory if needed
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  // Determine location
+  if (!location) {
+    console.error('');
+    console.error('Where should the API key be stored?');
+    console.error('  1. Global (~/.config/typefully/config.json) - Available to all projects');
+    console.error('  2. Local (./.typefully/config.json) - Only this project, overrides global');
+    console.error('');
+    const choice = await prompt('Choose location [1/2] (default: 1): ');
+    location = choice === '2' ? 'local' : 'global';
   }
 
-  // Write the .env file
-  fs.writeFileSync(CONFIG_FILE, `TYPEFULLY_API_KEY=${apiKey}\n`, { mode: 0o600 });
+  const isLocal = location === 'local' || location === '2';
+  const configPath = isLocal
+    ? path.join(process.cwd(), LOCAL_CONFIG_FILE)
+    : GLOBAL_CONFIG_FILE;
+
+  // Read existing config to preserve other settings
+  const existingConfig = readConfigFile(configPath) || {};
+  const newConfig = { ...existingConfig, apiKey };
+
+  writeConfig(configPath, newConfig);
+
+  // Offer to add .typefully/ to .gitignore for local config
+  if (isLocal) {
+    const gitignorePath = path.join(process.cwd(), '.gitignore');
+    if (fs.existsSync(gitignorePath)) {
+      const gitignore = fs.readFileSync(gitignorePath, 'utf-8');
+      if (!gitignore.includes('.typefully/') && !gitignore.includes('.typefully\n')) {
+        console.error('');
+        const addToGitignore = await prompt('Add .typefully/ to .gitignore? [Y/n]: ');
+        if (addToGitignore.toLowerCase() !== 'n') {
+          fs.appendFileSync(gitignorePath, '\n# Typefully config (contains API key)\n.typefully/\n');
+          console.error('✓ Added .typefully/ to .gitignore');
+        }
+      }
+    }
+  }
+
+  console.error('');
+  console.error(`✓ API key saved to ${configPath}`);
 
   output({
     success: true,
-    message: 'API key saved',
-    path: CONFIG_FILE,
+    message: 'Setup complete',
+    config_path: configPath,
+    scope: isLocal ? 'local' : 'global',
   });
 }
 
@@ -275,16 +323,26 @@ async function cmdConfigShow() {
 
   if (!result) {
     output({
-      api_key_configured: false,
-      hint: `Get your key at ${API_KEY_URL}`,
+      configured: false,
+      hint: 'Run: typefully.js setup',
+      api_key_url: API_KEY_URL,
     });
     return;
   }
 
+  // Also show what config files exist
+  const localConfigPath = path.join(process.cwd(), LOCAL_CONFIG_FILE);
+  const localConfig = readConfigFile(localConfigPath);
+  const globalConfig = readConfigFile(GLOBAL_CONFIG_FILE);
+
   output({
-    api_key_configured: true,
-    api_key_source: result.source,
+    configured: true,
+    active_source: result.source,
     api_key_preview: result.key.slice(0, 8) + '...',
+    config_files: {
+      local: localConfig ? { path: localConfigPath, has_key: !!localConfig.apiKey } : null,
+      global: globalConfig ? { path: GLOBAL_CONFIG_FILE, has_key: !!globalConfig.apiKey } : null,
+    },
   });
 }
 
@@ -730,6 +788,15 @@ function showHelp() {
 USAGE:
   typefully.js <command> [arguments]
 
+SETUP:
+  setup                                      Interactive setup - saves API key securely
+    --key <api_key>                          Provide key non-interactively
+    --location <global|local>                Choose config location non-interactively
+                                             global: ~/.config/typefully/config.json
+                                             local: ./.typefully/config.json (project-specific)
+
+  config:show                                Show current config and API key source
+
 COMMANDS:
   me:get                                     Get authenticated user info
 
@@ -786,10 +853,16 @@ COMMANDS:
     --timeout <seconds>                      Max wait for processing (default: 60)
   media:status <social_set_id> <media_id>    Check media upload status
 
-  config:set-key <api_key>                   Save API key to ~/.config/typefully/.env
-  config:show                                Show current config and API key source
-
 EXAMPLES:
+  # First time setup (interactive)
+  ./typefully.js setup
+
+  # Non-interactive setup (for scripts/CI)
+  ./typefully.js setup --key typ_xxx --location global
+
+  # Check current configuration
+  ./typefully.js config:show
+
   # Get your user info
   ./typefully.js me:get
 
@@ -835,19 +908,18 @@ EXAMPLES:
   # Create draft with share URL
   ./typefully.js drafts:create 123 --platform x --text "Check this out" --share
 
-  # Upload media and create post with it (single command handles everything!)
+  # Upload media and create post with it
   ./typefully.js media:upload 123 ./image.jpg
   # Returns: {"media_id": "abc-123", "status": "ready", "message": "Media uploaded and ready to use"}
   ./typefully.js drafts:create 123 --platform x --text "Check out this image!" --media abc-123
 
-  # Save API key for future use
-  ./typefully.js config:set-key your_api_key_here
+CONFIG PRIORITY:
+  1. TYPEFULLY_API_KEY environment variable (highest)
+  2. ./.typefully/config.json (project-local)
+  3. ~/.config/typefully/config.json (user-global, lowest)
 
-SETUP:
-  1. Get your API key from ${API_KEY_URL}
-  2. Either:
-     - Export it: export TYPEFULLY_API_KEY=your_key_here
-     - Or save it: ./typefully.js config:set-key your_key_here
+GET YOUR API KEY:
+  ${API_KEY_URL}
 `);
 }
 
@@ -856,6 +928,7 @@ SETUP:
 // ============================================================================
 
 const COMMANDS = {
+  'setup': cmdSetup,
   'me:get': cmdMeGet,
   'social-sets:list': cmdSocialSetsList,
   'social-sets:get': cmdSocialSetsGet,
@@ -870,7 +943,6 @@ const COMMANDS = {
   'tags:create': cmdTagsCreate,
   'media:upload': cmdMediaUpload,
   'media:status': cmdMediaStatus,
-  'config:set-key': cmdConfigSetKey,
   'config:show': cmdConfigShow,
   'help': showHelp,
   '--help': showHelp,

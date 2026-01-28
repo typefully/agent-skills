@@ -28,17 +28,26 @@ The `typefully.js` script is a self-contained JavaScript CLI that wraps the Type
 
 - **Requirements**: Node.js 18+ (for built-in fetch API)
 - **Dependencies**: None (uses only Node.js built-in modules)
-- **Authentication**: Uses `TYPEFULLY_API_KEY` from environment, local `.env`, or `~/.config/typefully/.env`
+- **Authentication**: Priority order:
+  1. `TYPEFULLY_API_KEY` environment variable
+  2. `./.typefully/config.json` (project-local)
+  3. `~/.config/typefully/config.json` (user-global)
 - **API Base**: `https://api.typefully.com/v2`
 
-Key commands: `me:get`, `social-sets:list`, `social-sets:get`, `drafts:list`, `drafts:get`, `drafts:create`, `drafts:update`, `drafts:delete`, `drafts:schedule`, `drafts:publish`, `tags:list`, `tags:create`, `media:upload`, `media:status`, `config:set-key`, `config:show`
+Key commands: `setup`, `me:get`, `social-sets:list`, `social-sets:get`, `drafts:list`, `drafts:get`, `drafts:create`, `drafts:update`, `drafts:delete`, `drafts:schedule`, `drafts:publish`, `tags:list`, `tags:create`, `media:upload`, `media:status`, `config:show`
 
 All commands output JSON.
 
 ## Testing the CLI
 
 ```bash
+# Interactive setup (recommended)
+./skills/typefully/scripts/typefully.js setup
+
+# Or use environment variable
 export TYPEFULLY_API_KEY=your_key
+
+# Test commands
 ./skills/typefully/scripts/typefully.js social-sets:list
 ./skills/typefully/scripts/typefully.js drafts:create <social_set_id> --text "Test post"
 ```
