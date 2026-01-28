@@ -15,7 +15,7 @@ Skills are markdown files that give AI agents specialized knowledge and workflow
 ## Installation
 
 > [!NOTE]
-> Requires a Typefully API key. Get yours at https://typefully.com/settings/api and set it as an environment variable:
+> Requires a Typefully API key. Get yours at https://typefully.com/?settings=api and set it as an environment variable:
 >
 > ```bash
 > export TYPEFULLY_API_KEY=your_key_here
@@ -99,7 +99,7 @@ Install a recent Node.js version, then retry your command.
 ### API errors (401, 403)
 
 - Verify your API key is correct
-- Check that your key has the required permissions at https://typefully.com/settings/api
+- Check that your key has the required permissions at https://typefully.com/?settings=api
 
 ### Drafts not appearing
 
