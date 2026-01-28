@@ -35,7 +35,7 @@ API changes ship independently—updating the skill ensures you have the latest 
 Before using this skill, ensure:
 
 1. **API Key**: Set the `TYPEFULLY_API_KEY` environment variable
-   - Get your key at https://typefully.com/settings/api
+   - Get your key at https://typefully.com/?settings=api
    - Export it: `export TYPEFULLY_API_KEY=your_key`
 
 2. **Dependencies**: `curl`, `jq`, and `perl` must be installed (perl is pre-installed on macOS and most Linux systems)

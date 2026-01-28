@@ -30,7 +30,41 @@ The `typefully.sh` script is a self-contained Bash CLI that wraps the Typefully 
 - **Authentication**: Requires `TYPEFULLY_API_KEY` environment variable
 - **API Base**: `https://api.typefully.com/v2`
 
-Key commands: `me`, `social-sets`, `social-set`, `draft:list`, `draft:get`, `draft:create`, `draft:update`, `draft:delete`, `schedule`, `publish`, `tag:list`, `tag:create`, `media:upload`, `media:status`
+### Commands
+
+#### User & Account Info
+| Command | Description |
+|---------|-------------|
+| `me` | Get authenticated user info |
+| `social-sets` | List all social sets (accounts) |
+| `social-set <id>` | Get social set details with connected platforms |
+
+#### Drafts
+| Command | Description |
+|---------|-------------|
+| `draft:list <social_set_id>` | List drafts |
+| `draft:get <social_set_id> <draft_id>` | Get a specific draft |
+| `draft:create <social_set_id>` | Create a new draft |
+| `draft:update <social_set_id> <draft_id>` | Update an existing draft |
+| `draft:delete <social_set_id> <draft_id>` | Delete a draft |
+
+#### Scheduling & Publishing
+| Command | Description |
+|---------|-------------|
+| `schedule <social_set_id> <draft_id>` | Schedule a draft for later |
+| `publish <social_set_id> <draft_id>` | Publish immediately |
+
+#### Tags
+| Command | Description |
+|---------|-------------|
+| `tag:list <social_set_id>` | List all tags |
+| `tag:create <social_set_id>` | Create a new tag |
+
+#### Media
+| Command | Description |
+|---------|-------------|
+| `media:upload <social_set_id> <file>` | Upload image/video, returns media_id |
+| `media:status <social_set_id> <media_id>` | Check if media is processed |
 
 All commands output JSON. The script uses strict mode (`set -euo pipefail`).
 

@@ -16,7 +16,7 @@ command -v perl >/dev/null 2>&1 || { echo '{"error": "perl is required but not i
 # Check for API key (allow help without it)
 check_api_key() {
   if [[ -z "${TYPEFULLY_API_KEY:-}" ]]; then
-    echo '{"error": "TYPEFULLY_API_KEY environment variable is not set. Get your key at https://typefully.com/settings/api"}'
+    echo '{"error": "TYPEFULLY_API_KEY environment variable is not set. Get your key at https://typefully.com/?settings=api"}'
     exit 1
   fi
 }
@@ -161,7 +161,7 @@ EXAMPLES:
   ./typefully.sh draft:create 123 --platform x --text "Check out this image!" --media abc-123
 
 SETUP:
-  1. Get your API key from https://typefully.com/settings/api
+  1. Get your API key from https://typefully.com/?settings=api
   2. Export it: export TYPEFULLY_API_KEY=your_key_here
 EOF
 }

@@ -6,7 +6,7 @@
 
 AI agent skills for drafting, scheduling, and managing social media posts across X, LinkedIn, Threads, Bluesky, and Mastodon. Give your AI agent the ability to manage your social media scheduling directly from your IDE or terminal.
 
-Built on the [Typefully API](https://typefully.com/docs/api). [Typefully](https://typefully.com) is a writing and scheduling app used by 200k+ top creators and teams to grow on X, LinkedIn, Threads, and Bluesky.
+Built on [Typefully](https://typefully.com), a writing and scheduling app used by 200k+ top creators and teams to grow on X, LinkedIn, Threads, and Bluesky. See the [API documentation](https://typefully.com/docs/api) for details.
 
 ## What Are Skills?
 
@@ -15,7 +15,7 @@ Skills are markdown files that give AI agents specialized knowledge and workflow
 ## Installation
 
 > [!NOTE]
-> Requires a Typefully API key. Get yours at https://typefully.com/settings/api and set it as an environment variable:
+> Requires a Typefully API key. Get yours at https://typefully.com/?settings=api and set it as an environment variable:
 >
 > ```bash
 > export TYPEFULLY_API_KEY=your_key_here
@@ -23,6 +23,7 @@ Skills are markdown files that give AI agents specialized knowledge and workflow
 
 > [!TIP]
 > To avoid being asked which account to use every time, add your default `social_set_id` to your project's `CLAUDE.md` or `AGENTS.md`:
+
 > ```markdown
 > ## Typefully
 > Default social_set_id: 12345
@@ -106,7 +107,7 @@ sudo apt-get install curl jq
 ### API errors (401, 403)
 
 - Verify your API key is correct
-- Check that your key has the required permissions at https://typefully.com/settings/api
+- Check that your key has the required permissions at https://typefully.com/?settings=api
 
 ### Drafts not appearing
 
