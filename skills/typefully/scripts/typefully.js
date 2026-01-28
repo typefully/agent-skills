@@ -335,8 +335,23 @@ async function getFirstConnectedPlatform(socialSetId) {
   return null;
 }
 
+async function getAllConnectedPlatforms(socialSetId) {
+  const socialSet = await apiRequest('GET', `/social-sets/${socialSetId}`);
+  const platformOrder = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon'];
+  const platforms = socialSet.platforms || {};
+  const connected = [];
+
+  for (const platform of platformOrder) {
+    if (platforms[platform]) {
+      connected.push(platform);
+    }
+  }
+
+  return connected;
+}
+
 async function cmdDraftsCreate(args) {
-  const parsed = parseArgs(args, { share: 'boolean' });
+  const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
   const socialSetId = parsed._positional[0];
 
   if (!socialSetId) {
@@ -358,7 +373,19 @@ async function cmdDraftsCreate(args) {
 
   // Determine platform(s)
   let platforms = parsed.platform;
-  if (!platforms) {
+
+  if (parsed.all && parsed.platform) {
+    error('Cannot use both --all and --platform flags');
+  }
+
+  if (parsed.all) {
+    // Get all connected platforms
+    const allPlatforms = await getAllConnectedPlatforms(socialSetId);
+    if (allPlatforms.length === 0) {
+      error('No connected platforms found. Connect a platform at typefully.com');
+    }
+    platforms = allPlatforms.join(',');
+  } else if (!platforms) {
     // Smart default: get first connected platform
     const defaultPlatform = await getFirstConnectedPlatform(socialSetId);
     if (!defaultPlatform) {
@@ -721,6 +748,7 @@ COMMANDS:
   drafts:create <social_set_id> [options]    Create a new draft
     --platform <platforms>                   Comma-separated: x,linkedin,threads,bluesky,mastodon
                                              (auto-selects first connected platform if omitted)
+    --all                                    Post to all connected platforms
     --text <text>                            Post content (use --- on its own line for threads)
     --file, -f <path>                        Read content from file instead of --text
     --media <media_ids>                      Comma-separated media IDs to attach
@@ -771,8 +799,11 @@ EXAMPLES:
   # Create a tweet (auto-selects platform if only one connected)
   ./typefully.js drafts:create 123 --text "Hello world!"
 
-  # Create a cross-platform post
+  # Create a cross-platform post (specific platforms)
   ./typefully.js drafts:create 123 --platform x,linkedin --text "Big announcement!"
+
+  # Create a post on all connected platforms
+  ./typefully.js drafts:create 123 --all --text "Posting everywhere!"
 
   # Create a thread (use --- on its own line to separate posts)
   ./typefully.js drafts:create 123 --platform x --text $'First tweet\\n---\\nSecond tweet\\n---\\nThird tweet'

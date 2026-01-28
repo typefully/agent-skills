@@ -117,6 +117,7 @@ Always follow this workflow when creating posts:
 | `drafts:get <social_set_id> <draft_id>` | Get a specific draft with full content |
 | `drafts:create <social_set_id> --text "..."` | Create a new draft (auto-selects platform) |
 | `drafts:create <social_set_id> --platform x --text "..."` | Create a draft for specific platform(s) |
+| `drafts:create <social_set_id> --all --text "..."` | Create a draft for all connected platforms |
 | `drafts:create <social_set_id> --file <path>` | Create draft from file content |
 | `drafts:create ... --media <media_ids>` | Create draft with attached media |
 | `drafts:create ... --reply-to <url>` | Reply to an existing X post |
@@ -167,9 +168,14 @@ Always follow this workflow when creating posts:
 ./scripts/typefully.js drafts:create 123 --text "Hello, world!"
 ```
 
-### Create a cross-platform post
+### Create a cross-platform post (specific platforms)
 ```bash
 ./scripts/typefully.js drafts:create 123 --platform x,linkedin,threads --text "Big announcement!"
+```
+
+### Create a post on all connected platforms
+```bash
+./scripts/typefully.js drafts:create 123 --all --text "Posting everywhere!"
 ```
 
 ### Create and schedule for next slot
@@ -292,9 +298,12 @@ When automating posts, especially on X, follow these rules to keep accounts in g
 
 When in doubt, create drafts for user review rather than publishing directly.
 
+**Publishing confirmation**: Unless the user explicitly asks to "publish now" or "post immediately", always confirm before publishing. Creating a draft is safe; publishing is irreversible and goes public instantly.
+
 ## Tips
 
 - **Smart platform default**: If `--platform` is omitted, the first connected platform is auto-selected
+- **All platforms**: Use `--all` to post to all connected platforms at once
 - **Character limits**: X (280), LinkedIn (3000), Threads (500), Bluesky (300), Mastodon (500)
 - **Thread creation**: Use `---` on its own line to split into multiple posts (thread)
 - **Scheduling**: Use `next-free-slot` to let Typefully pick the optimal time
