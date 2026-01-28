@@ -304,6 +304,17 @@ async function cmdSetup(args) {
           console.error('✓ Added .typefully/ to .gitignore');
         }
       }
+    } else {
+      // No .gitignore exists - offer to create one to protect the API key
+      console.error('');
+      console.error('⚠️  No .gitignore found. Your API key could be accidentally committed.');
+      const createGitignore = await prompt('Create .gitignore with .typefully/ entry? [Y/n]: ');
+      if (createGitignore.toLowerCase() !== 'n') {
+        fs.writeFileSync(gitignorePath, '# Typefully config (contains API key)\n.typefully/\n');
+        console.error('✓ Created .gitignore with .typefully/ entry');
+      } else {
+        console.error('⚠️  Warning: Remember to add .typefully/ to .gitignore to protect your API key');
+      }
     }
   }
 
@@ -539,18 +550,36 @@ async function cmdDraftsUpdate(args) {
   const body = {};
 
   if (text) {
-    const platform = parsed.platform || 'x';
-    const platformList = platform.split(',').map(p => p.trim());
-
     // Parse media IDs
     const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
+
+    // Fetch existing draft to determine platforms (and for --append, to get posts)
+    const existing = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
+
+    // Determine which platforms to update
+    let platformList;
+    if (parsed.platform) {
+      // Explicit platform(s) specified
+      platformList = parsed.platform.split(',').map(p => p.trim());
+    } else {
+      // Default to draft's existing enabled platforms
+      platformList = Object.entries(existing.platforms || {})
+        .filter(([, config]) => config.enabled)
+        .map(([platform]) => platform);
+
+      if (platformList.length === 0) {
+        // Fallback: get first connected platform for this social set
+        const defaultPlatform = await getFirstConnectedPlatform(socialSetId);
+        if (!defaultPlatform) {
+          error('No connected platforms found. Connect a platform at typefully.com or specify --platform');
+        }
+        platformList = [defaultPlatform];
+      }
+    }
 
     let postsArray;
 
     if (parsed.append) {
-      // Fetch existing draft to get current posts
-      const existing = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
-
       // Extract posts from the first enabled platform
       let existingPosts = [];
       for (const [, config] of Object.entries(existing.platforms || {})) {
@@ -828,7 +857,8 @@ COMMANDS:
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
   drafts:update <social_set_id> <draft_id> [options]  Update a draft
-    --platform <platforms>                   Comma-separated platforms (default: x)
+    --platform <platforms>                   Comma-separated platforms
+                                             (preserves draft's existing platforms if omitted)
     --text <text>                            New post content
     --file, -f <path>                        Read content from file instead of --text
     --media <media_ids>                      Comma-separated media IDs to attach
