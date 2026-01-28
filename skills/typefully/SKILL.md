@@ -46,6 +46,26 @@ Before using this skill, ensure:
 2. `./.typefully/config.json` (project-local, in user's working directory)
 3. `~/.config/typefully/config.json` (user-global)
 
+### Handling "API key not found" errors
+
+**CRITICAL**: When you receive an "API key not found" error from the CLI:
+
+1. **Tell the user to run the setup command** - The setup is interactive and requires user input, so you cannot run it on their behalf. Recommend they run it themselves, using the correct path based on where this skill was loaded:
+   ```bash
+   <skill-path>/scripts/typefully.js setup
+   ```
+
+2. **Stop and wait** - After telling the user to run setup, **do not continue with the task**. You cannot create drafts, upload media, or perform any API operations without a valid API key. Wait for the user to complete setup and confirm before proceeding.
+
+3. **DO NOT** attempt any of the following:
+   - Searching for API keys in macOS Keychain, `.env` files, or other locations
+   - Grepping through config files or directories
+   - Looking in the user's Trash or other system folders
+   - Constructing complex shell commands to find credentials
+   - Drafting content or preparing posts before setup is complete
+
+The setup command will interactively guide the user through configuration. Trust the CLI's error messages and follow their instructions.
+
 > **Note for agents**: All script paths in this document (e.g., `./scripts/typefully.js`) are relative to the skill directory where this SKILL.md file is located. Resolve them accordingly based on where the skill is installed.
 
 ## Social Sets

@@ -213,8 +213,8 @@ Or provide both arguments explicitly:
 function requireApiKey() {
   const result = getApiKey();
   if (!result) {
-    error(`API key not found. Get your key at ${API_KEY_URL}`, {
-      hint: 'Run: typefully.js setup'
+    error(`API key not found. Run 'typefully.js setup' to configure your API key. Get your key at ${API_KEY_URL}`, {
+      action: 'Run: typefully.js setup'
     });
   }
   return result.key;
