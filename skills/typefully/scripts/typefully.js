@@ -220,8 +220,8 @@ function requireApiKey() {
   return result.key;
 }
 
-async function apiRequest(method, endpoint, body = null, options = {}) {
-  const { exitOnError = true } = options;
+async function apiRequest(method, endpoint, body = null, opts = {}) {
+  const { exitOnError = true } = opts;
   const apiKey = requireApiKey();
 
   const options = {
