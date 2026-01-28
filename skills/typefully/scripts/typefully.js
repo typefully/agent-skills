@@ -32,6 +32,37 @@ const CONTENT_TYPES = {
 };
 
 // ============================================================================
+// ANSI Color Helpers (no dependencies)
+// Only apply colors when outputting to a TTY (terminal)
+
+const isColorSupported = process.stderr.isTTY;
+
+const colors = {
+  reset: isColorSupported ? '\x1b[0m' : '',
+  bold: isColorSupported ? '\x1b[1m' : '',
+  dim: isColorSupported ? '\x1b[2m' : '',
+  green: isColorSupported ? '\x1b[32m' : '',
+  yellow: isColorSupported ? '\x1b[33m' : '',
+  blue: isColorSupported ? '\x1b[34m' : '',
+  cyan: isColorSupported ? '\x1b[36m' : '',
+  white: isColorSupported ? '\x1b[37m' : '',
+  gray: isColorSupported ? '\x1b[90m' : '',
+};
+
+// Formatting helpers
+const fmt = {
+  title: (text) => `${colors.bold}${colors.cyan}${text}${colors.reset}`,
+  success: (text) => `${colors.green}✓${colors.reset} ${text}`,
+  warn: (text) => `${colors.yellow}⚠${colors.reset}  ${text}`,
+  info: (text) => `${colors.blue}→${colors.reset} ${text}`,
+  dim: (text) => `${colors.dim}${text}${colors.reset}`,
+  bold: (text) => `${colors.bold}${text}${colors.reset}`,
+  link: (text) => `${colors.cyan}${text}${colors.reset}`,
+  num: (n) => `${colors.yellow}${n}${colors.reset}`,
+  label: (text) => `${colors.dim}${text}${colors.reset}`,
+};
+
+// ============================================================================
 // Utilities
 // ============================================================================
 
@@ -78,6 +109,107 @@ function getApiKey() {
   return null;
 }
 
+function getDefaultSocialSetId() {
+  // Priority 1: Project-local config (./.typefully/config.json)
+  const localConfigPath = path.join(process.cwd(), LOCAL_CONFIG_FILE);
+  const localConfig = readConfigFile(localConfigPath);
+  if (localConfig?.defaultSocialSetId) {
+    return { source: localConfigPath, id: localConfig.defaultSocialSetId };
+  }
+
+  // Priority 2: User-global config (~/.config/typefully/config.json)
+  const globalConfig = readConfigFile(GLOBAL_CONFIG_FILE);
+  if (globalConfig?.defaultSocialSetId) {
+    return { source: GLOBAL_CONFIG_FILE, id: globalConfig.defaultSocialSetId };
+  }
+
+  return null;
+}
+
+/**
+ * Sort and format social sets for display.
+ * Personal accounts (team: null) come first, then team accounts grouped by team name.
+ * Returns array of { set, displayLine } objects maintaining selection index mapping.
+ */
+function formatSocialSetsForDisplay(socialSets) {
+  // Separate personal and team accounts
+  const personal = socialSets.filter(s => !s.team);
+  const team = socialSets.filter(s => s.team);
+
+  // Sort team accounts by team name
+  team.sort((a, b) => (a.team.name || '').localeCompare(b.team.name || ''));
+
+  // Combine: personal first, then team
+  const sorted = [...personal, ...team];
+
+  // Format each for display with colors
+  return sorted.map((set, index) => {
+    const num = fmt.num(`${index + 1}.`.padStart(3));
+    const name = fmt.bold(set.name || 'Unnamed');
+    const username = set.username ? fmt.dim(` @${set.username}`) : '';
+    const teamLabel = set.team ? fmt.label(` [${set.team.name}]`) : '';
+    const displayLine = `  ${num} ${name}${username}${teamLabel}`;
+    return { set, displayLine, index: index + 1 };
+  });
+}
+
+function requireSocialSetId(providedId) {
+  if (providedId) {
+    return providedId;
+  }
+
+  const defaultResult = getDefaultSocialSetId();
+  if (defaultResult) {
+    return defaultResult.id;
+  }
+
+  error('social_set_id is required', {
+    hint: 'Run: typefully.js config:set-default to set a default, or provide it as an argument'
+  });
+}
+
+/**
+ * Resolve draft target for commands that accept [social_set_id] <draft_id>.
+ * When a default social set is configured, a single argument is ambiguous,
+ * so require --use-default to confirm intent.
+ */
+function resolveDraftTarget(positional, commandName, hasUseDefault) {
+  // If two args provided, no ambiguity - first is social_set_id, second is draft_id
+  if (positional.length >= 2) {
+    return { socialSetId: positional[0], draftId: positional[1] };
+  }
+
+  // If no args, always an error
+  if (positional.length === 0) {
+    error('draft_id is required');
+  }
+
+  // Single arg case - this is where ambiguity can occur
+  const singleArg = positional[0];
+  const defaultResult = getDefaultSocialSetId();
+
+  // If no default configured, the single arg must be draft_id (will error on missing social_set_id)
+  if (!defaultResult) {
+    error('draft_id is required', {
+      hint: 'Provide both social_set_id and draft_id, or set a default social set with: typefully.js config:set-default'
+    });
+  }
+
+  // Default is configured - require --use-default flag to confirm intent
+  if (!hasUseDefault) {
+    error(`Ambiguous arguments for ${commandName}`, {
+      hint: `With a default social set configured, a single argument is interpreted as draft_id.
+To confirm you want to use the default social set (${defaultResult.id}), add --use-default:
+  typefully.js ${commandName} ${singleArg} --use-default
+
+Or provide both arguments explicitly:
+  typefully.js ${commandName} <social_set_id> <draft_id>`
+    });
+  }
+
+  return { socialSetId: defaultResult.id, draftId: singleArg };
+}
+
 function requireApiKey() {
   const result = getApiKey();
   if (!result) {
@@ -88,7 +220,8 @@ function requireApiKey() {
   return result.key;
 }
 
-async function apiRequest(method, endpoint, body = null) {
+async function apiRequest(method, endpoint, body = null, options = {}) {
+  const { exitOnError = true } = options;
   const apiKey = requireApiKey();
 
   const options = {
@@ -114,7 +247,13 @@ async function apiRequest(method, endpoint, body = null) {
   }
 
   if (!response.ok) {
-    error(`HTTP ${response.status}`, { response: data });
+    if (exitOnError) {
+      error(`HTTP ${response.status}`, { response: data });
+    }
+    const err = new Error(`HTTP ${response.status}`);
+    err.response = data;
+    err.status = response.status;
+    throw err;
   }
 
   return data;
@@ -255,14 +394,22 @@ async function cmdSetup(args) {
   // Check if running in non-interactive mode (key provided as argument)
   let apiKey = parsed._positional[0] || parsed.key;
   let location = parsed.location || parsed.scope;
+  const defaultSocialSetArg = parsed['default-social-set'];
+  const noDefault = parsed['no-default'] === true || parsed['no-default'] === 'true';
+
+  // Non-interactive mode when --key is provided
+  const isNonInteractive = !!apiKey;
 
   // If key provided via argument, skip interactive prompt
   if (!apiKey) {
-    console.error('Typefully CLI Setup');
     console.error('');
-    console.error(`Get your API key at: ${API_KEY_URL}`);
+    console.error(fmt.title('Typefully CLI Setup'));
     console.error('');
-    apiKey = await prompt('Enter your Typefully API key: ');
+    console.error(fmt.dim('Sign up free at typefully.com if you don\'t have an account.'));
+    console.error('');
+    console.error(fmt.info(`Get your API key at: ${fmt.link(API_KEY_URL)}`));
+    console.error('');
+    apiKey = await prompt(`${colors.bold}Enter your Typefully API key:${colors.reset} `);
   }
 
   if (!apiKey) {
@@ -271,13 +418,18 @@ async function cmdSetup(args) {
 
   // Determine location
   if (!location) {
-    console.error('');
-    console.error('Where should the API key be stored?');
-    console.error('  1. Global (~/.config/typefully/config.json) - Available to all projects');
-    console.error('  2. Local (./.typefully/config.json) - Only this project, overrides global');
-    console.error('');
-    const choice = await prompt('Choose location [1/2] (default: 1): ');
-    location = choice === '2' ? 'local' : 'global';
+    if (isNonInteractive) {
+      // Default to global in non-interactive mode
+      location = 'global';
+    } else {
+      console.error('');
+      console.error(fmt.bold('Where should the API key be stored?'));
+      console.error(`  ${fmt.num('1.')} Global ${fmt.dim('(~/.config/typefully/)')} ${fmt.label('- Available to all projects')}`);
+      console.error(`  ${fmt.num('2.')} Local ${fmt.dim('(./.typefully/)')} ${fmt.label('- Only this project')}`);
+      console.error('');
+      const choice = await prompt(`${colors.bold}Choose location [1/2]${colors.reset} ${fmt.dim('(default: 1)')}: `);
+      location = choice === '2' ? 'local' : 'global';
+    }
   }
 
   const isLocal = location === 'local' || location === '2';
@@ -297,35 +449,144 @@ async function cmdSetup(args) {
     if (fs.existsSync(gitignorePath)) {
       const gitignore = fs.readFileSync(gitignorePath, 'utf-8');
       if (!gitignore.includes('.typefully/') && !gitignore.includes('.typefully\n')) {
-        console.error('');
-        const addToGitignore = await prompt('Add .typefully/ to .gitignore? [Y/n]: ');
-        if (addToGitignore.toLowerCase() !== 'n') {
+        if (isNonInteractive) {
+          // Auto-add to .gitignore in non-interactive mode
           fs.appendFileSync(gitignorePath, '\n# Typefully config (contains API key)\n.typefully/\n');
-          console.error('✓ Added .typefully/ to .gitignore');
+          console.error(fmt.success('Added .typefully/ to .gitignore'));
+        } else {
+          console.error('');
+          const addToGitignore = await prompt(`${colors.bold}Add .typefully/ to .gitignore?${colors.reset} ${fmt.dim('[Y/n]')}: `);
+          if (addToGitignore.toLowerCase() !== 'n') {
+            fs.appendFileSync(gitignorePath, '\n# Typefully config (contains API key)\n.typefully/\n');
+            console.error(fmt.success('Added .typefully/ to .gitignore'));
+          }
         }
       }
     } else {
       // No .gitignore exists - offer to create one to protect the API key
-      console.error('');
-      console.error('⚠️  No .gitignore found. Your API key could be accidentally committed.');
-      const createGitignore = await prompt('Create .gitignore with .typefully/ entry? [Y/n]: ');
-      if (createGitignore.toLowerCase() !== 'n') {
+      if (isNonInteractive) {
+        // Auto-create .gitignore in non-interactive mode
         fs.writeFileSync(gitignorePath, '# Typefully config (contains API key)\n.typefully/\n');
-        console.error('✓ Created .gitignore with .typefully/ entry');
+        console.error(fmt.success('Created .gitignore with .typefully/ entry'));
       } else {
-        console.error('⚠️  Warning: Remember to add .typefully/ to .gitignore to protect your API key');
+        console.error('');
+        console.error(fmt.warn('No .gitignore found. Your API key could be accidentally committed.'));
+        const createGitignore = await prompt(`${colors.bold}Create .gitignore with .typefully/ entry?${colors.reset} ${fmt.dim('[Y/n]')}: `);
+        if (createGitignore.toLowerCase() !== 'n') {
+          fs.writeFileSync(gitignorePath, '# Typefully config (contains API key)\n.typefully/\n');
+          console.error(fmt.success('Created .gitignore with .typefully/ entry'));
+        } else {
+          console.error(fmt.warn('Remember to add .typefully/ to .gitignore to protect your API key'));
+        }
       }
     }
   }
 
   console.error('');
-  console.error(`✓ API key saved to ${configPath}`);
+  console.error(fmt.success(`API key saved to ${fmt.dim(configPath)}`));
+
+  // Handle default social set
+  let defaultSocialSetId = null;
+
+  // If --default-social-set was provided, validate it before saving
+  if (defaultSocialSetArg) {
+    // Validate the social set exists via API
+    const origKey = process.env.TYPEFULLY_API_KEY;
+    process.env.TYPEFULLY_API_KEY = apiKey;
+    try {
+      await apiRequest('GET', `/social-sets/${defaultSocialSetArg}`, null, { exitOnError: false });
+    } catch {
+      if (origKey) {
+        process.env.TYPEFULLY_API_KEY = origKey;
+      } else {
+        delete process.env.TYPEFULLY_API_KEY;
+      }
+      error(`Social set ${defaultSocialSetArg} not found or not accessible`);
+    }
+    if (origKey) {
+      process.env.TYPEFULLY_API_KEY = origKey;
+    } else {
+      delete process.env.TYPEFULLY_API_KEY;
+    }
+
+    defaultSocialSetId = defaultSocialSetArg;
+    const updatedConfig = readConfigFile(configPath) || {};
+    updatedConfig.defaultSocialSetId = defaultSocialSetId;
+    writeConfig(configPath, updatedConfig);
+    console.error(fmt.success(`Default social set saved: ${defaultSocialSetId}`));
+  } else if (noDefault) {
+    // Skip setting default social set
+    console.error(fmt.dim('Skipping default social set configuration.'));
+  } else {
+    // Fetch social sets to determine what to do
+    let socialSets = null;
+    try {
+      const origKey = process.env.TYPEFULLY_API_KEY;
+      process.env.TYPEFULLY_API_KEY = apiKey;
+      socialSets = await apiRequest('GET', '/social-sets?limit=50', null, { exitOnError: false });
+      if (origKey) {
+        process.env.TYPEFULLY_API_KEY = origKey;
+      } else {
+        delete process.env.TYPEFULLY_API_KEY;
+      }
+    } catch (err) {
+      console.error(fmt.warn(`Could not fetch social sets: ${err.message}`));
+      console.error(fmt.dim('You can set a default later with: typefully.js config:set-default'));
+    }
+
+    if (socialSets) {
+      if (!socialSets.results || socialSets.results.length === 0) {
+        // No social sets found - provide helpful guidance
+        console.error('');
+        console.error(fmt.warn('No social sets found.'));
+        console.error(fmt.dim('To get started, connect a social account at typefully.com:'));
+        console.error(fmt.info(`${fmt.link('https://typefully.com/?settings=accounts')}`));
+        console.error('');
+        console.error(fmt.dim('After connecting, run: typefully.js config:set-default'));
+      } else if (socialSets.results.length === 1) {
+        // Only one social set - auto-select it without asking
+        defaultSocialSetId = socialSets.results[0].id;
+        const updatedConfig = readConfigFile(configPath) || {};
+        updatedConfig.defaultSocialSetId = defaultSocialSetId;
+        writeConfig(configPath, updatedConfig);
+        const name = socialSets.results[0].name || 'Unnamed';
+        const username = socialSets.results[0].username ? `@${socialSets.results[0].username}` : '';
+        console.error(fmt.success(`Default social set: ${fmt.bold(name)} ${fmt.dim(username)}`));
+      } else if (isNonInteractive) {
+        // Multiple social sets in non-interactive mode
+        console.error(fmt.info(`Found ${socialSets.results.length} social sets. Use --default-social-set <id> to set one as default.`));
+      } else {
+        // Multiple social sets in interactive mode - ask user to choose
+        const formatted = formatSocialSetsForDisplay(socialSets.results);
+
+        console.error('');
+        console.error(fmt.bold('Choose a default social set'));
+        console.error(fmt.dim('This will be used when you don\'t specify one. You can always override it.'));
+        console.error('');
+        formatted.forEach(({ displayLine }) => console.error(displayLine));
+        console.error('');
+
+        const choice = await prompt(`${colors.bold}Enter number${colors.reset} ${fmt.dim('(or Enter to skip)')}: `);
+        if (choice) {
+          const choiceNum = parseInt(choice, 10);
+          if (!isNaN(choiceNum) && choiceNum >= 1 && choiceNum <= formatted.length) {
+            defaultSocialSetId = formatted[choiceNum - 1].set.id;
+            const updatedConfig = readConfigFile(configPath) || {};
+            updatedConfig.defaultSocialSetId = defaultSocialSetId;
+            writeConfig(configPath, updatedConfig);
+            console.error(fmt.success(`Default social set saved`));
+          }
+        }
+      }
+    }
+  }
 
   output({
     success: true,
     message: 'Setup complete',
     config_path: configPath,
     scope: isLocal ? 'local' : 'global',
+    default_social_set_id: defaultSocialSetId,
   });
 }
 
@@ -346,24 +607,115 @@ async function cmdConfigShow() {
   const localConfig = readConfigFile(localConfigPath);
   const globalConfig = readConfigFile(GLOBAL_CONFIG_FILE);
 
+  // Get default social set info
+  const defaultSocialSet = getDefaultSocialSetId();
+
   output({
     configured: true,
     active_source: result.source,
     api_key_preview: result.key.slice(0, 8) + '...',
+    default_social_set: defaultSocialSet ? {
+      id: defaultSocialSet.id,
+      source: defaultSocialSet.source,
+    } : null,
     config_files: {
-      local: localConfig ? { path: localConfigPath, has_key: !!localConfig.apiKey } : null,
-      global: globalConfig ? { path: GLOBAL_CONFIG_FILE, has_key: !!globalConfig.apiKey } : null,
+      local: localConfig ? {
+        path: localConfigPath,
+        has_key: !!localConfig.apiKey,
+        has_default_social_set: !!localConfig.defaultSocialSetId,
+      } : null,
+      global: globalConfig ? {
+        path: GLOBAL_CONFIG_FILE,
+        has_key: !!globalConfig.apiKey,
+        has_default_social_set: !!globalConfig.defaultSocialSetId,
+      } : null,
     },
+  });
+}
+
+async function cmdConfigSetDefault(args) {
+  const parsed = parseArgs(args);
+  let socialSetId = parsed._positional[0];
+  let location = parsed.location || parsed.scope;
+
+  // Ensure we have an API key first
+  requireApiKey();
+
+  // If no social_set_id provided, list available social sets and ask
+  if (!socialSetId) {
+    const socialSets = await apiRequest('GET', '/social-sets?limit=50');
+
+    if (!socialSets.results || socialSets.results.length === 0) {
+      error('No social sets found. Create one at typefully.com first.');
+    }
+
+    const formatted = formatSocialSetsForDisplay(socialSets.results);
+
+    console.error(fmt.bold('Available social sets:'));
+    console.error('');
+    formatted.forEach(({ displayLine }) => console.error(displayLine));
+    console.error('');
+
+    if (formatted.length === 1) {
+      // Only one social set - auto-select it
+      socialSetId = formatted[0].set.id;
+      console.error(fmt.success(`Auto-selecting: ${fmt.bold(formatted[0].set.name || 'Unnamed')}`));
+    } else {
+      const choice = await prompt(`${colors.bold}Enter number:${colors.reset} `);
+      const choiceNum = parseInt(choice, 10);
+
+      if (isNaN(choiceNum) || choiceNum < 1 || choiceNum > formatted.length) {
+        error('Invalid selection');
+      }
+
+      socialSetId = formatted[choiceNum - 1].set.id;
+    }
+  }
+
+  // Verify the social set exists
+  try {
+    await apiRequest('GET', `/social-sets/${socialSetId}`, null, { exitOnError: false });
+  } catch {
+    error(`Social set ${socialSetId} not found or not accessible`);
+  }
+
+  // Determine location
+  if (!location) {
+    console.error('');
+    console.error(fmt.bold('Where should the default be stored?'));
+    console.error(`  ${fmt.num('1.')} Global ${fmt.dim('(~/.config/typefully/)')} ${fmt.label('- Available to all projects')}`);
+    console.error(`  ${fmt.num('2.')} Local ${fmt.dim('(./.typefully/)')} ${fmt.label('- Only this project')}`);
+    console.error('');
+    const choice = await prompt(`${colors.bold}Choose location [1/2]${colors.reset} ${fmt.dim('(default: 1)')}: `);
+    location = choice === '2' ? 'local' : 'global';
+  }
+
+  const isLocal = location === 'local' || location === '2';
+  const configPath = isLocal
+    ? path.join(process.cwd(), LOCAL_CONFIG_FILE)
+    : GLOBAL_CONFIG_FILE;
+
+  // Read existing config to preserve other settings
+  const existingConfig = readConfigFile(configPath) || {};
+  const newConfig = { ...existingConfig, defaultSocialSetId: socialSetId };
+
+  writeConfig(configPath, newConfig);
+
+  console.error('');
+  console.error(fmt.success(`Default social set saved to ${fmt.dim(configPath)}`));
+
+  output({
+    success: true,
+    message: 'Default social set configured',
+    default_social_set_id: socialSetId,
+    config_path: configPath,
+    scope: isLocal ? 'local' : 'global',
   });
 }
 
 async function cmdDraftsList(args) {
   const parsed = parseArgs(args);
-  const socialSetId = parsed._positional[0];
-
-  if (!socialSetId) {
-    error('social_set_id is required');
-  }
+  const socialSetId = requireSocialSetId(parsed._positional[0]);
 
   const params = new URLSearchParams();
   params.set('limit', parsed.limit || '10');
@@ -376,12 +728,14 @@ async function cmdDraftsList(args) {
 }
 
 async function cmdDraftsGet(args) {
-  const parsed = parseArgs(args);
-  const [socialSetId, draftId] = parsed._positional;
+  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  const positional = parsed._positional;
 
-  if (!socialSetId || !draftId) {
-    error('social_set_id and draft_id are required');
-  }
+  const { socialSetId, draftId } = resolveDraftTarget(
+    positional,
+    'drafts:get',
+    parsed['use-default']
+  );
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
   output(data);
@@ -421,11 +775,7 @@ async function getAllConnectedPlatforms(socialSetId) {
 
 async function cmdDraftsCreate(args) {
   const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
-  const socialSetId = parsed._positional[0];
-
-  if (!socialSetId) {
-    error('social_set_id is required');
-  }
+  const socialSetId = requireSocialSetId(parsed._positional[0]);
 
   // Get text content
   let text = parsed.text;
@@ -531,12 +881,14 @@ async function cmdDraftsCreate(args) {
 }
 
 async function cmdDraftsUpdate(args) {
-  const parsed = parseArgs(args, { append: 'boolean', share: 'boolean' });
-  const [socialSetId, draftId] = parsed._positional;
+  const parsed = parseArgs(args, { append: 'boolean', share: 'boolean', 'use-default': 'boolean' });
+  const positional = parsed._positional;
 
-  if (!socialSetId || !draftId) {
-    error('social_set_id and draft_id are required');
-  }
+  const { socialSetId, draftId } = resolveDraftTarget(
+    positional,
+    'drafts:update',
+    parsed['use-default']
+  );
 
   // Get text content
   let text = parsed.text;
@@ -643,24 +995,30 @@ async function cmdDraftsUpdate(args) {
 }
 
 async function cmdDraftsDelete(args) {
-  const parsed = parseArgs(args);
-  const [socialSetId, draftId] = parsed._positional;
+  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  const positional = parsed._positional;
 
-  if (!socialSetId || !draftId) {
-    error('social_set_id and draft_id are required');
-  }
+  // Destructive operation - require explicit --use-default when using default with single arg
+  const { socialSetId, draftId } = resolveDraftTarget(
+    positional,
+    'drafts:delete',
+    parsed['use-default']
+  );
 
   await apiRequest('DELETE', `/social-sets/${socialSetId}/drafts/${draftId}`);
   output({ success: true, message: 'Draft deleted' });
 }
 
 async function cmdDraftsSchedule(args) {
-  const parsed = parseArgs(args);
-  const [socialSetId, draftId] = parsed._positional;
+  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  const positional = parsed._positional;
 
-  if (!socialSetId || !draftId) {
-    error('social_set_id and draft_id are required');
-  }
+  // Destructive operation - require explicit --use-default when using default with single arg
+  const { socialSetId, draftId } = resolveDraftTarget(
+    positional,
+    'drafts:schedule',
+    parsed['use-default']
+  );
 
   if (!parsed.time) {
     error('--time is required (use "next-free-slot" or ISO datetime)');
@@ -673,12 +1031,15 @@ async function cmdDraftsSchedule(args) {
 }
 
 async function cmdDraftsPublish(args) {
-  const parsed = parseArgs(args);
-  const [socialSetId, draftId] = parsed._positional;
+  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  const positional = parsed._positional;
 
-  if (!socialSetId || !draftId) {
-    error('social_set_id and draft_id are required');
-  }
+  // Destructive operation - require explicit --use-default when using default with single arg
+  const { socialSetId, draftId } = resolveDraftTarget(
+    positional,
+    'drafts:publish',
+    parsed['use-default']
+  );
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, {
     publish_at: 'now',
@@ -688,11 +1049,7 @@ async function cmdDraftsPublish(args) {
 
 async function cmdTagsList(args) {
   const parsed = parseArgs(args);
-  const socialSetId = parsed._positional[0];
-
-  if (!socialSetId) {
-    error('social_set_id is required');
-  }
+  const socialSetId = requireSocialSetId(parsed._positional[0]);
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/tags?limit=50`);
   output(data);
@@ -700,11 +1057,7 @@ async function cmdTagsList(args) {
 
 async function cmdTagsCreate(args) {
   const parsed = parseArgs(args);
-  const socialSetId = parsed._positional[0];
-
-  if (!socialSetId) {
-    error('social_set_id is required');
-  }
+  const socialSetId = requireSocialSetId(parsed._positional[0]);
 
   if (!parsed.name) {
     error('--name is required');
@@ -718,10 +1071,17 @@ async function cmdTagsCreate(args) {
 
 async function cmdMediaUpload(args) {
   const parsed = parseArgs(args, { 'no-wait': 'boolean' });
-  const [socialSetId, filePath] = parsed._positional;
+  const positional = parsed._positional;
 
-  if (!socialSetId || !filePath) {
-    error('social_set_id and file path are required');
+  // Support both: media:upload <file_path> (with default) and media:upload <social_set_id> <file_path>
+  let socialSetId, filePath;
+  if (positional.length >= 2) {
+    [socialSetId, filePath] = positional;
+  } else if (positional.length === 1) {
+    filePath = positional[0];
+    socialSetId = requireSocialSetId(null);
+  } else {
+    error('file path is required');
   }
 
   if (!fs.existsSync(filePath)) {
@@ -801,10 +1161,17 @@ async function cmdMediaUpload(args) {
 
 async function cmdMediaStatus(args) {
   const parsed = parseArgs(args);
-  const [socialSetId, mediaId] = parsed._positional;
+  const positional = parsed._positional;
 
-  if (!socialSetId || !mediaId) {
-    error('social_set_id and media_id are required');
+  // Support both: media:status <media_id> (with default) and media:status <social_set_id> <media_id>
+  let socialSetId, mediaId;
+  if (positional.length >= 2) {
+    [socialSetId, mediaId] = positional;
+  } else if (positional.length === 1) {
+    mediaId = positional[0];
+    socialSetId = requireSocialSetId(null);
+  } else {
+    error('media_id is required');
   }
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/media/${mediaId}`);
@@ -818,13 +1185,17 @@ USAGE:
   typefully.js <command> [arguments]
 
 SETUP:
-  setup                                      Interactive setup - saves API key securely
-    --key <api_key>                          Provide key non-interactively
-    --location <global|local>                Choose config location non-interactively
+  setup                                      Interactive setup - saves API key and optional default social set
+    --key <api_key>                          Provide key non-interactively (enables non-interactive mode)
+    --location <global|local>                Choose config location (default: global in non-interactive mode)
                                              global: ~/.config/typefully/config.json
                                              local: ./.typefully/config.json (project-specific)
+    --default-social-set <id>                Set default social set non-interactively
+    --no-default                             Skip setting default social set in non-interactive mode
 
-  config:show                                Show current config and API key source
+  config:show                                Show current config, API key source, and default social set
+  config:set-default [social_set_id]         Set default social set (interactive if ID not provided)
+    --location <global|local>                Choose where to store the default
 
 COMMANDS:
   me:get                                     Get authenticated user info
@@ -832,16 +1203,17 @@ COMMANDS:
   social-sets:list                           List all social sets
   social-sets:get <social_set_id>            Get social set details with platforms
 
-  drafts:list <social_set_id> [options]      List drafts
+  drafts:list [social_set_id] [options]      List drafts (uses default if ID omitted)
     --status <status>                        Filter by: draft, scheduled, published, error, publishing
     --tag <tag_slug>                         Filter by tag slug
     --sort <order>                           Sort by: created_at, -created_at, updated_at, -updated_at,
                                              scheduled_date, -scheduled_date, published_at, -published_at
     --limit <n>                              Max results (default: 10, max: 50)
 
-  drafts:get <social_set_id> <draft_id>      Get a specific draft
+  drafts:get [social_set_id] <draft_id>      Get a specific draft
+    --use-default                            Required when using default social set with single arg
 
-  drafts:create <social_set_id> [options]    Create a new draft
+  drafts:create [social_set_id] [options]    Create a new draft (uses default if ID omitted)
     --platform <platforms>                   Comma-separated: x,linkedin,threads,bluesky,mastodon
                                              (auto-selects first connected platform if omitted)
     --all                                    Post to all connected platforms
@@ -856,7 +1228,7 @@ COMMANDS:
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
-  drafts:update <social_set_id> <draft_id> [options]  Update a draft
+  drafts:update [social_set_id] <draft_id> [options]  Update a draft
     --platform <platforms>                   Comma-separated platforms
                                              (preserves draft's existing platforms if omitted)
     --text <text>                            New post content
@@ -867,31 +1239,47 @@ COMMANDS:
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
+    --use-default                            Required when using default social set with single arg
 
   drafts:delete <social_set_id> <draft_id>   Delete a draft
+    --use-default                            Required when using default social set with single arg
 
   drafts:schedule <social_set_id> <draft_id> [options]  Schedule a draft
     --time <time>                            "next-free-slot" or ISO datetime (required)
+    --use-default                            Required when using default social set with single arg
 
   drafts:publish <social_set_id> <draft_id>  Publish a draft immediately
+    --use-default                            Required when using default social set with single arg
 
-  tags:list <social_set_id>                  List all tags
-  tags:create <social_set_id> --name <name>  Create a new tag
+  tags:list [social_set_id]                  List all tags (uses default if ID omitted)
+  tags:create [social_set_id] --name <name>  Create a new tag (uses default if ID omitted)
 
-  media:upload <social_set_id> <file>        Upload media file (handles upload + polling)
+  media:upload [social_set_id] <file>        Upload media file (uses default if one arg)
     --no-wait                                Return immediately after upload (don't poll)
     --timeout <seconds>                      Max wait for processing (default: 60)
-  media:status <social_set_id> <media_id>    Check media upload status
+  media:status [social_set_id] <media_id>    Check media upload status (uses default if one arg)
 
 EXAMPLES:
   # First time setup (interactive)
   ./typefully.js setup
 
-  # Non-interactive setup (for scripts/CI)
+  # Non-interactive setup (for scripts/CI) - auto-selects default if only one social set
   ./typefully.js setup --key typ_xxx --location global
 
-  # Check current configuration
+  # Non-interactive setup with explicit default social set
+  ./typefully.js setup --key typ_xxx --location global --default-social-set 123
+
+  # Non-interactive setup, skip default social set selection
+  ./typefully.js setup --key typ_xxx --no-default
+
+  # Check current configuration (shows API key source and default social set)
   ./typefully.js config:show
+
+  # Set a default social set (interactive)
+  ./typefully.js config:set-default
+
+  # Set a default social set (non-interactive)
+  ./typefully.js config:set-default 123 --location global
 
   # Get your user info
   ./typefully.js me:get
@@ -899,14 +1287,17 @@ EXAMPLES:
   # List all social sets
   ./typefully.js social-sets:list
 
-  # Create a tweet (auto-selects platform if only one connected)
+  # Create a tweet (uses default social set if configured)
+  ./typefully.js drafts:create --text "Hello world!"
+
+  # Create a tweet with explicit social set ID
   ./typefully.js drafts:create 123 --text "Hello world!"
 
   # Create a cross-platform post (specific platforms)
-  ./typefully.js drafts:create 123 --platform x,linkedin --text "Big announcement!"
+  ./typefully.js drafts:create --platform x,linkedin --text "Big announcement!"
 
   # Create a post on all connected platforms
-  ./typefully.js drafts:create 123 --all --text "Posting everywhere!"
+  ./typefully.js drafts:create --all --text "Posting everywhere!"
 
   # Create a thread (use --- on its own line to separate posts)
   ./typefully.js drafts:create 123 --platform x --text $'First tweet\\n---\\nSecond tweet\\n---\\nThird tweet'
@@ -923,8 +1314,14 @@ EXAMPLES:
   # List scheduled drafts sorted by date
   ./typefully.js drafts:list 123 --status scheduled --sort scheduled_date
 
-  # Publish a draft immediately
+  # Publish a draft immediately (explicit social_set_id and draft_id)
   ./typefully.js drafts:publish 123 456
+
+  # Publish using default social set (requires --use-default for safety)
+  ./typefully.js drafts:publish 456 --use-default
+
+  # Delete a draft (requires --use-default when using default social set)
+  ./typefully.js drafts:delete 456 --use-default
 
   # Append to existing thread
   ./typefully.js drafts:update 123 456 --append --text "New tweet at the end"
@@ -974,6 +1371,7 @@ const COMMANDS = {
   'media:upload': cmdMediaUpload,
   'media:status': cmdMediaStatus,
   'config:show': cmdConfigShow,
+  'config:set-default': cmdConfigSetDefault,
   'help': showHelp,
   '--help': showHelp,
   '-h': showHelp,
