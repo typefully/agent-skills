@@ -61,6 +61,10 @@ Skills can be installed via:
 3. Cursor: Add as remote GitHub rule
 4. Manual: Copy `skills/typefully/` to `.cursor/skills/` or `.claude/skills/`
 
+## Updating the Skill
+
+When making changes to the CLI (`typefully.js`) or the skill definition (`SKILL.md`), always update the `last-updated` date in the SKILL.md frontmatter to the current date. This date is used for freshness checks to warn users if the skill may be outdated.
+
 ## Commit & Pull Request Guidelines
 
 - NEVER add "Co-authored with Claude" or that kind of AI-assistant plugin to commit messages or PR descriptions.
