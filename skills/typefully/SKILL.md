@@ -105,11 +105,14 @@ When determining which social set to use:
 |--------------|--------|
 | "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
 | "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
+| "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
+| "X thread + LinkedIn post" (different content) | Create one draft, then `drafts:update` to add platform (see [Publishing to Multiple Platforms](#publishing-to-multiple-platforms)) |
 | "What's scheduled?" | `drafts:list --status scheduled` |
 | "Show my recent posts" | `drafts:list --status published` |
 | "Schedule this for tomorrow" | `drafts:create ... --schedule "2025-01-21T09:00:00Z"` |
 | "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <draft_id> --use-default` |
 | "Add notes/ideas to the draft" | `drafts:create ... --scratchpad "Your notes here"` |
+| "Check available tags" | `tags:list` |
 
 ## Workflow
 
@@ -136,7 +139,61 @@ Follow this workflow when creating posts:
    ```
    Note: If `--platform` is omitted, the first connected platform is auto-selected.
 
+   **For multi-platform posts**: See [Publishing to Multiple Platforms](#publishing-to-multiple-platforms) — always use a single draft, even when content differs per platform.
+
 4. **Schedule or publish** as needed
+
+## Working with Tags
+
+Tags help organize drafts within Typefully. **Always check existing tags before creating new ones**:
+
+1. **List existing tags first**:
+   ```bash
+   ./scripts/typefully.js tags:list
+   ```
+
+2. **Use existing tags when available** - if a tag with the desired name already exists, use it directly when creating drafts:
+   ```bash
+   ./scripts/typefully.js drafts:create --text "..." --tags existing-tag-name
+   ```
+
+3. **Only create new tags if needed** - if the tag doesn't exist, create it:
+   ```bash
+   ./scripts/typefully.js tags:create --name "New Tag"
+   ```
+
+**Important**: Tags are scoped to each social set. A tag created for one social set won't appear in another.
+
+## Publishing to Multiple Platforms
+
+If a single draft needs to be created for different platforms, you need to make sure to create **a single draft** and not multiple drafts.
+
+When the content is the same across platforms, create a single draft with multiple platforms:
+
+```bash
+# Specific platforms
+./scripts/typefully.js drafts:create --platform x,linkedin --text "Big announcement!"
+
+# All connected platforms
+./scripts/typefully.js drafts:create --all --text "Posting everywhere!"
+```
+
+**IMPORTANT**: When content should be tailored (e.g., X thread with a LinkedIn post version), **still use a single draft** — create with one platform first, then update to add the other:
+
+```bash
+# 1. Create draft with the primary platform first
+./scripts/typefully.js drafts:create --platform linkedin --text "Excited to share our new feature..."
+# Returns: { "id": "draft-123", ... }
+
+# 2. Update the same draft to add another platform with different content
+./scripts/typefully.js drafts:update draft-123 --platform x --text "🧵 Thread time!
+
+---
+
+Here's what we shipped and why it matters..." --use-default
+```
+
+So make sure to NEVER create multiple drafts unless the user explicitly wants separate drafts for each platform.
 
 ## Commands Reference
 
