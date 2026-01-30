@@ -12,32 +12,20 @@ Built on the [Typefully API](https://typefully.com/docs/api). [Typefully](https:
 
 Skills are markdown files that give AI agents specialized knowledge and workflows for specific tasks. Add this to your project and your AI agent will be able to create, schedule, and publish social media content.
 
-## Installation
+## Setup
 
-> [!NOTE]
-> Requires a Typefully API key. Get yours at https://typefully.com/?settings=api and set it as an environment variable:
->
-> ```bash
-> export TYPEFULLY_API_KEY=your_key_here
-> ```
+### 1. Install the skill
 
-> [!TIP]
-> To avoid being asked which account to use every time, add your default `social_set_id` to your project's `CLAUDE.md` or `AGENTS.md`:
-> ```markdown
-> ## Typefully
-> Default social_set_id: 12345
-> ```
-> Find your social_set_id by running `./scripts/typefully.js social-sets:list` after setting your API key.
-
-### CLI (Recommended)
-
-Works with Claude Code, Cursor, Windsurf, and many other agents.
+**CLI** (works with Claude Code, Cursor, Windsurf, and many other agents):
 
 ```bash
 npx skills add typefully/agent-skills
 ```
 
-### Claude Code Plugin
+<details>
+<summary>Other installation methods</summary>
+
+**Claude Code Plugin:**
 
 ```
 /plugin marketplace add typefully/agent-skills
@@ -49,20 +37,39 @@ Then:
 /plugin install typefully@typefully-skills
 ```
 
-### Cursor
+**Cursor:**
 
 1. Open Settings (Cmd+Shift+J)
 2. Go to "Rules & Command" → "Project Rules"
 3. Click "Add Rule" → "Remote Rule (GitHub)"
 4. Enter: `https://github.com/typefully/agent-skills.git`
 
-### Manual
+**Manual:**
 
 Clone this repository and copy `skills/typefully/` to your project's `.cursor/skills/` or `.claude/skills/` directory.
 
-## Usage Examples
+</details>
 
-After installing, ask your AI agent:
+### 2. Copy your API Key
+
+You'll need a Typefully API key for the setup command. Copy an existing key or create a new one at https://typefully.com/?settings=api
+
+### 3. Run the setup command
+
+This configures your API key and default social set:
+
+```bash
+./scripts/typefully.js setup
+```
+
+> [!TIP]
+> The path depends on how you installed the skill, but you can ask your agent "Help me set up the Typefully skill" to get the correct path.
+>
+> You can also set the API key as an environment variable instead: `export TYPEFULLY_API_KEY=your_key_here`
+
+### 4. Start using it
+
+Ask your AI agent things like:
 
 - "Draft a tweet about [topic]"
 - "Create a LinkedIn post announcing [news]"
@@ -83,13 +90,19 @@ After installing, ask your AI agent:
 
 ### "TYPEFULLY_API_KEY environment variable is not set"
 
-Make sure you've exported your API key:
+Run the setup command:
+
+```bash
+./scripts/typefully.js setup
+```
+
+Or set the environment variable manually:
 
 ```bash
 export TYPEFULLY_API_KEY=your_key_here
 ```
 
-To persist across sessions, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+To persist the environment variable across sessions, add it to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
 
 ### "Node.js is required"
 
