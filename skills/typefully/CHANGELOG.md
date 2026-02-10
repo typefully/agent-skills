@@ -4,7 +4,9 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
-## [Unreleased] - 2026-02-10
+## [Unreleased]
+
+## [2026-02-10]
 
 ### Added
 
@@ -17,4 +19,3 @@ The format is based on Keep a Changelog.
 - `update-draft` no longer overwrites draft content when you run it with only flags (for example, adding tags).
 - Clear CLI errors when a value-taking flag is provided without a value (instead of crashing).
 - Thread splitting on `---` now works with both LF and CRLF line endings.
-
