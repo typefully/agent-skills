@@ -9,6 +9,7 @@ This repository contains AI agent skills for Typefully - markdown files that giv
 ## Repository Structure
 
 - `skills/typefully/SKILL.md` - The main skill definition file with frontmatter metadata and usage instructions
+- `skills/typefully/CHANGELOG.md` - User-facing changelog for the Typefully skill/CLI
 - `skills/typefully/scripts/typefully.js` - JavaScript CLI for the Typefully API v2 (zero dependencies, Node.js 18+)
 - `.claude-plugin/marketplace.json` - Claude Code plugin marketplace configuration
 
@@ -64,6 +65,14 @@ Skills can be installed via:
 ## Updating the Skill
 
 When making changes to the CLI (`typefully.js`) or the skill definition (`SKILL.md`), always update the `last-updated` date in the SKILL.md frontmatter to the current date. This date is used for freshness checks to warn users if the skill may be outdated.
+
+### Changelog Updates (Required)
+
+When you change anything that affects how a user runs the CLI or uses the skill (new commands/flags, behavior changes, bug fixes, error messages, defaults), update the changelog in the relevant skill folder:
+
+- `skills/typefully/CHANGELOG.md`
+
+Changelog entries must be **user-facing only**. Do not include internal implementation details like refactors, test/CI changes, formatting-only edits, or code organization.
 
 ## Commit & Pull Request Guidelines
 
