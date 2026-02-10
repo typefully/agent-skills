@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  node-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Run Tests
+        run: node --test
+

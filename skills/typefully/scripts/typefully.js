@@ -12,7 +12,8 @@ const path = require('path');
 const os = require('os');
 const readline = require('readline');
 
-const API_BASE = 'https://api.typefully.com/v2';
+// Allow overriding API base for tests / self-hosted mocks.
+const API_BASE = process.env.TYPEFULLY_API_BASE || 'https://api.typefully.com/v2';
 const GLOBAL_CONFIG_DIR = path.join(os.homedir(), '.config', 'typefully');
 const GLOBAL_CONFIG_FILE = path.join(GLOBAL_CONFIG_DIR, 'config.json');
 const LOCAL_CONFIG_DIR = '.typefully';
@@ -265,18 +266,25 @@ function parseArgs(args, spec = {}) {
 
   while (i < args.length) {
     const arg = args[i];
+    if (typeof arg !== 'string') {
+      // This should never happen with process.argv, but can happen if we build argv arrays internally.
+      error('Invalid argument type', { argument: arg });
+    }
 
     if (arg.startsWith('--')) {
-      const key = arg.slice(2);
+      const rawKey = arg.slice(2);
+      const key = rawKey === 'scratchpad' ? 'notes' : rawKey;
       if (spec[key] === 'boolean') {
         result[key] = true;
         i++;
-      } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+      } else if (i + 1 < args.length && !String(args[i + 1]).startsWith('--')) {
         result[key] = args[i + 1];
         i += 2;
       } else {
-        result[key] = true;
-        i++;
+        if (rawKey === 'social-set-id' || rawKey === 'social_set_id') {
+          error('--social-set-id (or --social_set_id) requires a value');
+        }
+        error(`${arg} requires a value`);
       }
     } else if (arg === '-f') {
       // Shorthand for --file
@@ -284,20 +292,12 @@ function parseArgs(args, spec = {}) {
         result.file = args[i + 1];
         i += 2;
       } else {
-        i++;
+        error('-f requires a value');
       }
     } else if (arg === '-a') {
       // Shorthand for --append
       result.append = true;
       i++;
-    } else if (arg === '--scratchpad') {
-      // Alias for --notes
-      if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
-        result.notes = args[i + 1];
-        i += 2;
-      } else {
-        i++;
-      }
     } else {
       result._positional.push(arg);
       i++;
@@ -307,9 +307,89 @@ function parseArgs(args, spec = {}) {
   return result;
 }
 
+function coerceFlagValueToString(value, flagName, { allowEmpty = false } = {}) {
+  if (value === true || value == null) {
+    error(`${flagName} requires a value`);
+  }
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    error(`${flagName} must be a string`);
+  }
+  const str = String(value);
+  if (!allowEmpty && str.trim() === '') {
+    error(`${flagName} requires a non-empty value`);
+  }
+  return str;
+}
+
+function pushStringFlag(argv, parsed, key, flagName, opts) {
+  if (!Object.prototype.hasOwnProperty.call(parsed, key)) return;
+  const value = coerceFlagValueToString(parsed[key], flagName, opts);
+  argv.push(flagName, value);
+}
+
+function parseCsvArg(value, flagName) {
+  // parseArgs sets missing values to true (e.g. `--tags --other-flag`)
+  if (value === true) {
+    error(`${flagName} requires a value`);
+  }
+  if (value == null) return null;
+  if (typeof value !== 'string') {
+    error(`${flagName} must be a string`);
+  }
+  if (value.trim() === '') return [];
+  return value
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+function getSocialSetIdFromParsed(parsed) {
+  // Support both kebab and snake case. (People often copy from API docs.)
+  const value = parsed['social-set-id'] ?? parsed.social_set_id;
+  if (value === true) {
+    error('--social-set-id (or --social_set_id) requires a value');
+  }
+  if (value == null) return null;
+  if (typeof value !== 'string') {
+    error('--social-set-id (or --social_set_id) must be a string');
+  }
+  if (value.trim() === '') {
+    error('--social-set-id (or --social_set_id) requires a non-empty value');
+  }
+  return value;
+}
+
+function resolveSocialSetIdFromParsed(parsed, positionalId) {
+  const flagId = getSocialSetIdFromParsed(parsed);
+  if (flagId && positionalId && flagId !== positionalId) {
+    error('Conflicting social_set_id values', { positional: positionalId, flag: flagId });
+  }
+  return requireSocialSetId(flagId || positionalId);
+}
+
+function resolveDraftTargetFromParsed(parsed, commandName) {
+  const positional = parsed._positional;
+  const flagId = getSocialSetIdFromParsed(parsed);
+
+  if (flagId) {
+    // Support `[social_set_id] <draft_id>` and `<draft_id>` forms while still allowing --social-set-id.
+    if (positional.length >= 2 && positional[0] !== flagId) {
+      error('Conflicting social_set_id values', { positional: positional[0], flag: flagId });
+    }
+    const draftId = positional.length >= 2 ? positional[1] : positional[0];
+    if (!draftId) {
+      error('draft_id is required');
+    }
+    return { socialSetId: flagId, draftId };
+  }
+
+  return resolveDraftTarget(positional, commandName, parsed['use-default']);
+}
+
 function splitThreadText(text) {
-  // Split on --- that appears on its own line
-  return text.split(/\n---\n/).filter(t => t.trim());
+  // Split on --- that appears on its own line. Support both LF and CRLF.
+  // Allow surrounding spaces so " --- " still counts, but avoid matching longer runs like "----".
+  return text.split(/\r?\n[ \t]*---[ \t]*\r?\n/).filter(t => t.trim());
 }
 
 function getContentType(filename) {
@@ -356,11 +436,7 @@ async function cmdSocialSetsList() {
 
 async function cmdSocialSetsGet(args) {
   const parsed = parseArgs(args);
-  const socialSetId = parsed._positional[0];
-
-  if (!socialSetId) {
-    error('social_set_id is required');
-  }
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}`);
   output(data);
@@ -389,7 +465,7 @@ function writeConfig(configPath, config) {
 }
 
 async function cmdSetup(args) {
-  const parsed = parseArgs(args);
+  const parsed = parseArgs(args, { 'no-default': 'boolean' });
 
   // Check if running in non-interactive mode (key provided as argument)
   let apiKey = parsed._positional[0] || parsed.key;
@@ -635,7 +711,12 @@ async function cmdConfigShow() {
 
 async function cmdConfigSetDefault(args) {
   const parsed = parseArgs(args);
+  const socialSetIdFlag = getSocialSetIdFromParsed(parsed);
   let socialSetId = parsed._positional[0];
+  if (socialSetIdFlag && socialSetId && socialSetIdFlag !== socialSetId) {
+    error('Conflicting social_set_id values', { positional: socialSetId, flag: socialSetIdFlag });
+  }
+  socialSetId = socialSetIdFlag || socialSetId;
   let location = parsed.location || parsed.scope;
 
   // Ensure we have an API key first
@@ -715,7 +796,7 @@ async function cmdConfigSetDefault(args) {
 
 async function cmdDraftsList(args) {
   const parsed = parseArgs(args);
-  const socialSetId = requireSocialSetId(parsed._positional[0]);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
 
   const params = new URLSearchParams();
   params.set('limit', parsed.limit || '10');
@@ -729,13 +810,7 @@ async function cmdDraftsList(args) {
 
 async function cmdDraftsGet(args) {
   const parsed = parseArgs(args, { 'use-default': 'boolean' });
-  const positional = parsed._positional;
-
-  const { socialSetId, draftId } = resolveDraftTarget(
-    positional,
-    'drafts:get',
-    parsed['use-default']
-  );
+  const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:get');
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
   output(data);
@@ -775,7 +850,7 @@ async function getAllConnectedPlatforms(socialSetId) {
 
 async function cmdDraftsCreate(args) {
   const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
-  const socialSetId = requireSocialSetId(parsed._positional[0]);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
 
   // Get text content
   let text = parsed.text;
@@ -864,8 +939,8 @@ async function cmdDraftsCreate(args) {
     body.publish_at = parsed.schedule;
   }
 
-  if (parsed.tags) {
-    body.tags = parsed.tags.split(',').map(t => t.trim());
+  if (Object.prototype.hasOwnProperty.call(parsed, 'tags')) {
+    body.tags = parseCsvArg(parsed.tags, '--tags');
   }
 
   if (parsed.share) {
@@ -882,13 +957,7 @@ async function cmdDraftsCreate(args) {
 
 async function cmdDraftsUpdate(args) {
   const parsed = parseArgs(args, { append: 'boolean', share: 'boolean', 'use-default': 'boolean' });
-  const positional = parsed._positional;
-
-  const { socialSetId, draftId } = resolveDraftTarget(
-    positional,
-    'drafts:update',
-    parsed['use-default']
-  );
+  const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
 
   // Get text content
   let text = parsed.text;
@@ -986,24 +1055,97 @@ async function cmdDraftsUpdate(args) {
     body.scratchpad_text = parsed.notes;
   }
 
+  if (Object.prototype.hasOwnProperty.call(parsed, 'tags')) {
+    body.tags = parseCsvArg(parsed.tags, '--tags');
+  }
+
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, or --notes is required');
+    error('At least one of --text, --file, --title, --schedule, --share, --notes, or --tags is required');
   }
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, body);
   output(data);
 }
 
+// ---------------------------------------------------------------------------
+// Aliases (human/agent-friendly)
+// ---------------------------------------------------------------------------
+
+async function cmdCreateDraftAlias(args) {
+  const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
+  const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+
+  const forwarded = [String(socialSetId)];
+
+  // Prefer explicit --file / --text, otherwise treat positional args as the draft content.
+  if (Object.prototype.hasOwnProperty.call(parsed, 'file')) {
+    forwarded.push('--file', coerceFlagValueToString(parsed.file, '--file'));
+  } else {
+    let text;
+    if (Object.prototype.hasOwnProperty.call(parsed, 'text')) {
+      text = coerceFlagValueToString(parsed.text, '--text');
+    } else {
+      if (parsed._positional.length === 0) {
+        error('Draft text is required (provide it as the first argument, or use --text/--file)');
+      }
+      text = parsed._positional.join(' ');
+    }
+    forwarded.push('--text', text);
+  }
+
+  pushStringFlag(forwarded, parsed, 'platform', '--platform');
+  if (parsed.all) forwarded.push('--all');
+  pushStringFlag(forwarded, parsed, 'media', '--media');
+  pushStringFlag(forwarded, parsed, 'title', '--title');
+  pushStringFlag(forwarded, parsed, 'schedule', '--schedule');
+  pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
+  pushStringFlag(forwarded, parsed, 'reply-to', '--reply-to');
+  pushStringFlag(forwarded, parsed, 'community', '--community');
+  if (parsed.share) forwarded.push('--share');
+  pushStringFlag(forwarded, parsed, 'notes', '--notes');
+
+  await cmdDraftsCreate(forwarded);
+}
+
+async function cmdUpdateDraftAlias(args) {
+  const parsed = parseArgs(args, { append: 'boolean', share: 'boolean' });
+  const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+
+  if (parsed._positional.length === 0) {
+    error('draft_id is required');
+  }
+  const draftId = parsed._positional[0];
+
+  // Optional positional text after draft_id:
+  // `update-draft <id> "New text" ...`
+  let text;
+  if (Object.prototype.hasOwnProperty.call(parsed, 'text')) {
+    text = coerceFlagValueToString(parsed.text, '--text');
+  } else if (!Object.prototype.hasOwnProperty.call(parsed, 'file') && parsed._positional.length > 1) {
+    text = parsed._positional.slice(1).join(' ');
+  }
+
+  const forwarded = [String(socialSetId), String(draftId)];
+  pushStringFlag(forwarded, parsed, 'platform', '--platform');
+  if (text) forwarded.push('--text', text);
+  if (Object.prototype.hasOwnProperty.call(parsed, 'file')) {
+    forwarded.push('--file', coerceFlagValueToString(parsed.file, '--file'));
+  }
+  pushStringFlag(forwarded, parsed, 'media', '--media');
+  if (parsed.append) forwarded.push('--append');
+  pushStringFlag(forwarded, parsed, 'title', '--title');
+  pushStringFlag(forwarded, parsed, 'schedule', '--schedule');
+  pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
+  if (parsed.share) forwarded.push('--share');
+  pushStringFlag(forwarded, parsed, 'notes', '--notes');
+
+  await cmdDraftsUpdate(forwarded);
+}
+
 async function cmdDraftsDelete(args) {
   const parsed = parseArgs(args, { 'use-default': 'boolean' });
-  const positional = parsed._positional;
-
   // Destructive operation - require explicit --use-default when using default with single arg
-  const { socialSetId, draftId } = resolveDraftTarget(
-    positional,
-    'drafts:delete',
-    parsed['use-default']
-  );
+  const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:delete');
 
   await apiRequest('DELETE', `/social-sets/${socialSetId}/drafts/${draftId}`);
   output({ success: true, message: 'Draft deleted' });
@@ -1011,14 +1153,8 @@ async function cmdDraftsDelete(args) {
 
 async function cmdDraftsSchedule(args) {
   const parsed = parseArgs(args, { 'use-default': 'boolean' });
-  const positional = parsed._positional;
-
   // Destructive operation - require explicit --use-default when using default with single arg
-  const { socialSetId, draftId } = resolveDraftTarget(
-    positional,
-    'drafts:schedule',
-    parsed['use-default']
-  );
+  const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:schedule');
 
   if (!parsed.time) {
     error('--time is required (use "next-free-slot" or ISO datetime)');
@@ -1032,14 +1168,8 @@ async function cmdDraftsSchedule(args) {
 
 async function cmdDraftsPublish(args) {
   const parsed = parseArgs(args, { 'use-default': 'boolean' });
-  const positional = parsed._positional;
-
   // Destructive operation - require explicit --use-default when using default with single arg
-  const { socialSetId, draftId } = resolveDraftTarget(
-    positional,
-    'drafts:publish',
-    parsed['use-default']
-  );
+  const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:publish');
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, {
     publish_at: 'now',
@@ -1049,7 +1179,7 @@ async function cmdDraftsPublish(args) {
 
 async function cmdTagsList(args) {
   const parsed = parseArgs(args);
-  const socialSetId = requireSocialSetId(parsed._positional[0]);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/tags?limit=50`);
   output(data);
@@ -1057,7 +1187,7 @@ async function cmdTagsList(args) {
 
 async function cmdTagsCreate(args) {
   const parsed = parseArgs(args);
-  const socialSetId = requireSocialSetId(parsed._positional[0]);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
 
   if (!parsed.name) {
     error('--name is required');
@@ -1075,11 +1205,16 @@ async function cmdMediaUpload(args) {
 
   // Support both: media:upload <file_path> (with default) and media:upload <social_set_id> <file_path>
   let socialSetId, filePath;
+  const socialSetIdFlag = getSocialSetIdFromParsed(parsed);
   if (positional.length >= 2) {
-    [socialSetId, filePath] = positional;
+    if (socialSetIdFlag && positional[0] !== socialSetIdFlag) {
+      error('Conflicting social_set_id values', { positional: positional[0], flag: socialSetIdFlag });
+    }
+    socialSetId = socialSetIdFlag || positional[0];
+    filePath = positional[1];
   } else if (positional.length === 1) {
     filePath = positional[0];
-    socialSetId = requireSocialSetId(null);
+    socialSetId = requireSocialSetId(socialSetIdFlag);
   } else {
     error('file path is required');
   }
@@ -1091,6 +1226,12 @@ async function cmdMediaUpload(args) {
   const rawFilename = path.basename(filePath);
   const filename = sanitizeFilename(rawFilename);
   const timeout = parseInt(parsed.timeout || '60', 10) * 1000;
+  const pollIntervalMs = (() => {
+    const raw = process.env.TYPEFULLY_MEDIA_POLL_INTERVAL_MS;
+    if (!raw) return 2000;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 2000;
+  })();
 
   // Step 1: Get presigned URL from API
   const presignedResponse = await apiRequest('POST', `/social-sets/${socialSetId}/media/upload`, {
@@ -1146,8 +1287,8 @@ async function cmdMediaUpload(args) {
       error('Media processing failed', { status: statusResponse });
     }
 
-    // Wait 2 seconds before polling again
-    await sleep(2000);
+    // Wait before polling again (override for tests with TYPEFULLY_MEDIA_POLL_INTERVAL_MS)
+    await sleep(pollIntervalMs);
   }
 
   // Timeout reached
@@ -1165,11 +1306,16 @@ async function cmdMediaStatus(args) {
 
   // Support both: media:status <media_id> (with default) and media:status <social_set_id> <media_id>
   let socialSetId, mediaId;
+  const socialSetIdFlag = getSocialSetIdFromParsed(parsed);
   if (positional.length >= 2) {
-    [socialSetId, mediaId] = positional;
+    if (socialSetIdFlag && positional[0] !== socialSetIdFlag) {
+      error('Conflicting social_set_id values', { positional: positional[0], flag: socialSetIdFlag });
+    }
+    socialSetId = socialSetIdFlag || positional[0];
+    mediaId = positional[1];
   } else if (positional.length === 1) {
     mediaId = positional[0];
-    socialSetId = requireSocialSetId(null);
+    socialSetId = requireSocialSetId(socialSetIdFlag);
   } else {
     error('media_id is required');
   }
@@ -1183,6 +1329,10 @@ function showHelp() {
 
 USAGE:
   typefully.js <command> [arguments]
+
+NOTE:
+  Commands that take a social_set_id as a positional argument also accept:
+    --social-set-id <id>   (or --social_set_id <id>)
 
 SETUP:
   setup                                      Interactive setup - saves API key and optional default social set
@@ -1201,7 +1351,7 @@ COMMANDS:
   me:get                                     Get authenticated user info
 
   social-sets:list                           List all social sets
-  social-sets:get <social_set_id>            Get social set details with platforms
+  social-sets:get [social_set_id]            Get social set details with platforms (uses default if ID omitted)
 
   drafts:list [social_set_id] [options]      List drafts (uses default if ID omitted)
     --status <status>                        Filter by: draft, scheduled, published, error, publishing
@@ -1237,9 +1387,13 @@ COMMANDS:
     --append, -a                             Append to existing thread instead of replacing
     --title <title>                          New draft title
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
+    --tags <tag_slugs>                       Comma-separated tag slugs
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --use-default                            Required when using default social set with single arg
+
+  create-draft <text> [options]             Alias for drafts:create (positional text + --social-set-id)
+  update-draft <draft_id> [text] [options]  Alias for drafts:update (positional text optional + --social-set-id)
 
   drafts:delete <social_set_id> <draft_id>   Delete a draft
     --use-default                            Required when using default social set with single arg
@@ -1363,6 +1517,8 @@ const COMMANDS = {
   'drafts:get': cmdDraftsGet,
   'drafts:create': cmdDraftsCreate,
   'drafts:update': cmdDraftsUpdate,
+  'create-draft': cmdCreateDraftAlias,
+  'update-draft': cmdUpdateDraftAlias,
   'drafts:delete': cmdDraftsDelete,
   'drafts:schedule': cmdDraftsSchedule,
   'drafts:publish': cmdDraftsPublish,

@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-01-29
+last-updated: 2026-02-10
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -73,6 +73,10 @@ The setup command will interactively guide the user through configuration. Trust
 The Typefully API uses the term "social set" to refer to what users commonly call an "account". A social set contains the connected social media platforms (X, LinkedIn, Threads, etc.) for a single identity.
 
 **The CLI supports a default social set** - once configured, most commands work without specifying the social_set_id.
+
+**You can pass the social set either way**:
+- Positional: `drafts:list 123`
+- Flag: `drafts:list --social-set-id 123` (also supports `--social_set_id`)
 
 When determining which social set to use:
 
@@ -224,6 +228,7 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
 | `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
+| `drafts:update [social_set_id] <draft_id> --tags "tag1,tag2"` | Update tags on an existing draft (content unchanged) |
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
 | `drafts:update [social_set_id] <draft_id> --append --text "..."` | Append to existing thread |
