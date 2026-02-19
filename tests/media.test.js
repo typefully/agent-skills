@@ -9,7 +9,47 @@ test('media:upload uses presigned URL and does not set Content-Type on PUT', asy
   const mediaFilePath = path.join(sandbox.cwd, 'img.jpg');
   await fs.writeFile(mediaFilePath, Buffer.from('fake'));
 
-  // 1)
+  // 1) Request presigned URL from Typefully API
+  server.expect('POST', '/v2/social-sets/9/media/upload', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      upload_url: baseUrl.replace('/v2', '') + '/upload/m1',
+      media_id: 'm1',
+    },
+  });
+
+  // 2) Upload binary to presigned URL without Content-Type
+  server.expect('PUT', '/upload/m1', {
+    assert: (req) => {
+      assert.equal(req.headers['content-type'], undefined);
+      assert.equal(req.bodyText, 'fake');
+    },
+    json: { ok: true },
+  });
+
+  // 3) Poll media status until ready
+  server.expect('GET', '/v2/social-sets/9/media/m1', {
+    assert: authAssertFactory(apiKey),
+    json: { id: 'm1', status: 'ready' },
+  });
+
+  try {
+    const result = await runCli(
+      ['media:upload', '9', mediaFilePath],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      media_id: 'm1',
+      status: 'ready',
+      message: 'Media uploaded and ready to use',
+    });
+    server.assertNoPendingExpectations();
+  } finally {
+    await server.close();
+    await sandbox.cleanup();
+  }
+});
 
 test('media:status hits /media/<id> with default social set when omitted', async () => {
   const sandbox = await makeSandbox();
