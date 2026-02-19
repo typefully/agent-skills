@@ -1,12 +1,13 @@
-const test = require('node:test');
+const { test: nodeTest } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 
 const CLI_PATH = path.resolve(__dirname, '..', 'skills', 'typefully', 'scripts', 'typefully.js');
+const test = typeof globalThis.test === 'function' ? globalThis.test : nodeTest;
+let execaLoader;
 
 async function mkdtemp(prefix) {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -28,36 +29,38 @@ async function makeSandbox() {
   };
 }
 
-function runCli(args, { cwd, env, timeoutMs = 5000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI_PATH, ...args], {
+async function getExeca() {
+  if (!execaLoader) {
+    execaLoader = import('execa').then((mod) => mod.execa);
+  }
+  return execaLoader;
+}
+
+async function runCli(args, { cwd, env, timeoutMs = 5000 } = {}) {
+  const execa = await getExeca();
+
+  try {
+    const result = await execa(process.execPath, [CLI_PATH, ...args], {
       cwd,
       env: { ...process.env, ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      extendEnv: false,
+      stdin: 'ignore',
+      reject: false,
+      timeout: timeoutMs,
     });
 
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.stderr.on('data', (d) => { stderr += d; });
-
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`CLI timeout after ${timeoutMs}ms: ${args.join(' ')}`));
-    }, timeoutMs);
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      resolve({ code, signal, stdout, stderr });
-    });
-  });
+    return {
+      code: result.exitCode,
+      signal: result.signal ?? null,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+    };
+  } catch (err) {
+    if (err && err.timedOut) {
+      throw new Error(`CLI timeout after ${timeoutMs}ms: ${args.join(' ')}`);
+    }
+    throw err;
+  }
 }
 
 function parseJsonOrNull(text) {
@@ -147,7 +150,6 @@ module.exports = {
   test,
   assert,
   http,
-  spawn,
   fs,
   path,
   os,

@@ -16,6 +16,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Node modules
+node_modules/
+
 # Test artifacts
 coverage/
 .nyc_output/
