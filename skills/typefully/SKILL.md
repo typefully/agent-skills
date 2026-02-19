@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-02-10
+last-updated: 2026-02-19
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -117,6 +117,7 @@ When determining which social set to use:
 | "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <draft_id> --use-default` |
 | "Add notes/ideas to the draft" | `drafts:create ... --scratchpad "Your notes here"` |
 | "Check available tags" | `tags:list` |
+| "Show my queue for next week" | `queue:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 
 ## Workflow
 
@@ -246,6 +247,23 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 | `drafts:publish <social_set_id> <draft_id>` | Publish immediately |
 | `drafts:publish <draft_id> --use-default` | Publish using default social set |
 
+### Queue
+
+All queue commands support an optional `[social_set_id]` - if omitted, the configured default is used.
+
+The queue is a **social-set-specific timeline** made of:
+- Queue slots generated from that social set's queue schedule
+- Scheduled drafts/posts that belong to that same social set
+
+Use `queue:get` when the user asks what is already scheduled (or free) for a given account in a date range.
+
+| Command | Description |
+|---------|-------------|
+| `queue:get [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Get the queue timeline for one social set: free queue slots plus scheduled drafts/posts in a date range |
+| `queue:get ... --start_date <YYYY-MM-DD> --end_date <YYYY-MM-DD>` | Snake case aliases for date flags (copied from API docs) |
+| `queue:schedule:get [social_set_id]` | Get queue schedule rules |
+| `queue:schedule:put [social_set_id] --rules '[{"h":9,"m":30,"days":["mon","wed","fri"]}]'` | Replace queue schedule rules (full replacement) |
+
 ### Tags
 
 | Command | Description |
@@ -320,6 +338,21 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 ### List scheduled posts sorted by date
 ```bash
 ./scripts/typefully.js drafts:list --status scheduled --sort scheduled_date
+```
+
+### Get queue view for a date range
+```bash
+./scripts/typefully.js queue:get --start-date 2026-02-01 --end-date 2026-02-29
+```
+
+### Get queue schedule
+```bash
+./scripts/typefully.js queue:schedule:get
+```
+
+### Replace queue schedule rules
+```bash
+./scripts/typefully.js queue:schedule:put --rules '[{"h":9,"m":30,"days":["mon","wed","fri"]}]'
 ```
 
 ### Reply to a tweet

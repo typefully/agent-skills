@@ -3,7 +3,19 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test"
+    "test": "vitest run",
+    "test:drafts": "vitest run tests/drafts.test.js",
+    "test:media": "vitest run tests/media.test.js",
+    "test:queue": "vitest run tests/queue.test.js",
+    "test:config": "vitest run tests/config.test.js",
+    "test:social-sets": "vitest run tests/social-sets.test.js",
+    "test:tags": "vitest run tests/tags.test.js",
+    "test:me": "vitest run tests/me.test.js",
+    "test:common": "vitest run tests/common.test.js",
+    "test:all": "vitest run tests/*.test.js"
+  },
+  "devDependencies": {
+    "execa": "^9.6.1",
+    "vitest": "^4.0.18"
   }
 }
-
