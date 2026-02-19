@@ -7,6 +7,9 @@ const os = require('node:os');
 
 const CLI_PATH = path.resolve(__dirname, '..', 'skills', 'typefully', 'scripts', 'typefully.js');
 const test = typeof globalThis.test === 'function' ? globalThis.test : nodeTest;
+const describe = typeof globalThis.describe === 'function' ? globalThis.describe : test;
+const it = typeof globalThis.it === 'function' ? globalThis.it : test;
+const DEFAULT_API_KEY = 'typ_test_key';
 let execaLoader;
 
 async function mkdtemp(prefix) {
@@ -61,6 +64,15 @@ async function runCli(args, { cwd, env, timeoutMs = 5000 } = {}) {
     }
     throw err;
   }
+}
+
+function buildCliEnv({ home, baseUrl, apiKey = DEFAULT_API_KEY, env = {} }) {
+  return {
+    HOME: home,
+    TYPEFULLY_API_BASE: baseUrl,
+    TYPEFULLY_API_KEY: apiKey,
+    ...env,
+  };
 }
 
 function parseJsonOrNull(text) {
@@ -146,18 +158,83 @@ function authAssertFactory(expectedKey) {
   };
 }
 
+async function writeLocalConfig(sandbox, configObject) {
+  const cfgDir = path.join(sandbox.cwd, '.typefully');
+  await fs.mkdir(cfgDir, { recursive: true });
+  await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify(configObject, null, 2));
+}
+
+function expectCliOk(result, expectedJson) {
+  assert.equal(result.code, 0);
+  if (expectedJson !== undefined) {
+    assert.deepEqual(parseJsonOrNull(result.stdout), expectedJson);
+  }
+}
+
+function expectCliError(result, expectedJson, expectedCode = 1) {
+  assert.equal(result.code, expectedCode);
+  if (expectedJson !== undefined) {
+    assert.deepEqual(parseJsonOrNull(result.stdout), expectedJson);
+  }
+}
+
+function withCliHarness(testFn, { apiKey = DEFAULT_API_KEY } = {}) {
+  return async () => {
+    const sandbox = await makeSandbox();
+    const server = createMockServer();
+    const { baseUrl } = await server.listen();
+    let succeeded = false;
+
+    const run = (args, { env = {}, timeoutMs } = {}) =>
+      runCli(args, {
+        cwd: sandbox.cwd,
+        timeoutMs,
+        env: buildCliEnv({ home: sandbox.home, baseUrl, apiKey, env }),
+      });
+
+    try {
+      await testFn({
+        sandbox,
+        server,
+        baseUrl,
+        apiKey,
+        run,
+        writeLocalConfig: async (configObject) => writeLocalConfig(sandbox, configObject),
+      });
+      succeeded = true;
+    } finally {
+      try {
+        if (succeeded) {
+          server.assertNoPendingExpectations();
+        }
+      } finally {
+        await server.close();
+        await sandbox.cleanup();
+      }
+    }
+  };
+}
+
 module.exports = {
   test,
+  describe,
+  it,
   assert,
   http,
   fs,
   path,
   os,
+  DEFAULT_API_KEY,
   CLI_PATH,
   mkdtemp,
   makeSandbox,
   runCli,
+  buildCliEnv,
   parseJsonOrNull,
   createMockServer,
   authAssertFactory,
+  writeLocalConfig,
+  expectCliOk,
+  expectCliError,
+  withCliHarness,
 };

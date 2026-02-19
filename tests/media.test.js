@@ -1,229 +1,149 @@
-const { test, assert, http, spawn, fs, path, os, mkdtemp, makeSandbox, runCli, parseJsonOrNull, createMockServer, authAssertFactory } = require('./typefully-cli.test-helpers');
+const {
+  describe,
+  it,
+  assert,
+  fs,
+  path,
+  withCliHarness,
+  authAssertFactory,
+  expectCliOk,
+} = require('./typefully-cli.test-helpers');
 
-test('media:upload uses presigned URL and does not set Content-Type on PUT', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
-  const mediaFilePath = path.join(sandbox.cwd, 'img.jpg');
+async function writeMediaFixture(cwd, name = 'img.jpg') {
+  const mediaFilePath = path.join(cwd, name);
   await fs.writeFile(mediaFilePath, Buffer.from('fake'));
+  return mediaFilePath;
+}
 
-  // 1) Request presigned URL from Typefully API
-  server.expect('POST', '/v2/social-sets/9/media/upload', {
-    assert: authAssertFactory(apiKey),
-    json: {
-      upload_url: baseUrl.replace('/v2', '') + '/upload/m1',
-      media_id: 'm1',
-    },
-  });
+function uploadResponse(baseUrl) {
+  return {
+    upload_url: `${baseUrl.replace('/v2', '')}/upload/m1`,
+    media_id: 'm1',
+  };
+}
 
-  // 2) Upload binary to presigned URL without Content-Type
-  server.expect('PUT', '/upload/m1', {
-    assert: (req) => {
-      assert.equal(req.headers['content-type'], undefined);
-      assert.equal(req.bodyText, 'fake');
-    },
-    json: { ok: true },
-  });
+describe('media:upload', () => {
+  it('uses presigned URL and does not set Content-Type on PUT', withCliHarness(async ({ sandbox, server, apiKey, run, baseUrl }) => {
+    const mediaFilePath = await writeMediaFixture(sandbox.cwd);
 
-  // 3) Poll media status until ready
-  server.expect('GET', '/v2/social-sets/9/media/m1', {
-    assert: authAssertFactory(apiKey),
-    json: { id: 'm1', status: 'ready' },
-  });
+    server.expect('POST', '/v2/social-sets/9/media/upload', {
+      assert: authAssertFactory(apiKey),
+      json: uploadResponse(baseUrl),
+    });
 
-  try {
-    const result = await runCli(
-      ['media:upload', '9', mediaFilePath],
-      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
-    );
-    assert.equal(result.code, 0);
-    assert.deepEqual(parseJsonOrNull(result.stdout), {
+    server.expect('PUT', '/upload/m1', {
+      assert: (req) => {
+        assert.equal(req.headers['content-type'], undefined);
+        assert.equal(req.bodyText, 'fake');
+      },
+      json: { ok: true },
+    });
+
+    server.expect('GET', '/v2/social-sets/9/media/m1', {
+      assert: authAssertFactory(apiKey),
+      json: { id: 'm1', status: 'ready' },
+    });
+
+    const result = await run(['media:upload', '9', mediaFilePath]);
+    expectCliOk(result, {
       media_id: 'm1',
       status: 'ready',
       message: 'Media uploaded and ready to use',
     });
-    server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('media:status hits /media/<id> with default social set when omitted', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
+  it('accepts --social-set-id when only a file arg is provided', withCliHarness(async ({ sandbox, server, apiKey, run, baseUrl }) => {
+    const mediaFilePath = await writeMediaFixture(sandbox.cwd);
 
-  // Default social set configured locally.
-  const cfgDir = path.join(sandbox.cwd, '.typefully');
-  await fs.mkdir(cfgDir, { recursive: true });
-  await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify({ defaultSocialSetId: '9' }, null, 2));
+    server.expect('POST', '/v2/social-sets/9/media/upload', {
+      assert: authAssertFactory(apiKey),
+      json: uploadResponse(baseUrl),
+    });
 
-  server.expect('GET', '/v2/social-sets/9/media/m1', {
-    assert: authAssertFactory(apiKey),
-    json: { id: 'm1', status: 'ready' },
-  });
+    server.expect('PUT', '/upload/m1', {
+      assert: (req) => {
+        assert.equal(req.headers['content-type'], undefined);
+        assert.equal(req.bodyText, 'fake');
+      },
+      json: { ok: true },
+    });
 
-  try {
-    const result = await runCli(
-      ['media:status', 'm1'],
-      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
-    );
-    assert.equal(result.code, 0);
-    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'm1', status: 'ready' });
-    server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+    const result = await run(['media:upload', mediaFilePath, '--social-set-id', '9', '--no-wait']);
+    expectCliOk(result);
+  }));
 
-test('media:upload can use --social-set-id when only a file arg is provided', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
+  it('polls status and supports fast poll interval override', withCliHarness(async ({ sandbox, server, apiKey, run, baseUrl }) => {
+    const mediaFilePath = await writeMediaFixture(sandbox.cwd);
 
-  const mediaFilePath = path.join(sandbox.cwd, 'img.jpg');
-  await fs.writeFile(mediaFilePath, Buffer.from('fake'));
+    server.expect('POST', '/v2/social-sets/9/media/upload', {
+      assert: authAssertFactory(apiKey),
+      json: uploadResponse(baseUrl),
+    });
 
-  server.expect('POST', '/v2/social-sets/9/media/upload', {
-    assert: authAssertFactory(apiKey),
-    json: {
-      upload_url: baseUrl.replace('/v2', '') + '/upload/m1',
-      media_id: 'm1',
-    },
-  });
+    server.expect('PUT', '/upload/m1', {
+      assert: (req) => {
+        assert.equal(req.headers['content-type'], undefined);
+        assert.equal(req.bodyText, 'fake');
+      },
+      json: { ok: true },
+    });
 
-  server.expect('PUT', '/upload/m1', {
-    assert: (req) => {
-      assert.equal(req.headers['content-type'], undefined);
-      assert.equal(req.bodyText, 'fake');
-    },
-    json: { ok: true },
-  });
+    server.expect('GET', '/v2/social-sets/9/media/m1', {
+      assert: authAssertFactory(apiKey),
+      json: { id: 'm1', status: 'processing' },
+    });
 
-  try {
-    const result = await runCli(
-      ['media:upload', mediaFilePath, '--social-set-id', '9', '--no-wait'],
-      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
-    );
-    assert.equal(result.code, 0);
-    server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+    server.expect('GET', '/v2/social-sets/9/media/m1', {
+      assert: authAssertFactory(apiKey),
+      json: { id: 'm1', status: 'ready' },
+    });
 
-test('media:upload polling path works (uses --timeout and fast poll interval override)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
-  const mediaFilePath = path.join(sandbox.cwd, 'img.jpg');
-  await fs.writeFile(mediaFilePath, Buffer.from('fake'));
-
-  server.expect('POST', '/v2/social-sets/9/media/upload', {
-    assert: authAssertFactory(apiKey),
-    json: {
-      upload_url: baseUrl.replace('/v2', '') + '/upload/m1',
-      media_id: 'm1',
-    },
-  });
-
-  server.expect('PUT', '/upload/m1', {
-    assert: (req) => {
-      assert.equal(req.headers['content-type'], undefined);
-      assert.equal(req.bodyText, 'fake');
-    },
-    json: { ok: true },
-  });
-
-  server.expect('GET', '/v2/social-sets/9/media/m1', {
-    assert: authAssertFactory(apiKey),
-    json: { id: 'm1', status: 'processing' },
-  });
-
-  server.expect('GET', '/v2/social-sets/9/media/m1', {
-    assert: authAssertFactory(apiKey),
-    json: { id: 'm1', status: 'ready' },
-  });
-
-  try {
-    const result = await runCli(
-      ['media:upload', '9', mediaFilePath, '--timeout', '1'],
-      {
-        cwd: sandbox.cwd,
-        env: {
-          HOME: sandbox.home,
-          TYPEFULLY_API_BASE: baseUrl,
-          TYPEFULLY_API_KEY: apiKey,
-          TYPEFULLY_MEDIA_POLL_INTERVAL_MS: '10',
-        },
-        timeoutMs: 5000,
-      }
-    );
-    assert.equal(result.code, 0);
-    assert.deepEqual(parseJsonOrNull(result.stdout), {
+    const result = await run(['media:upload', '9', mediaFilePath, '--timeout', '1'], {
+      env: { TYPEFULLY_MEDIA_POLL_INTERVAL_MS: '10' },
+      timeoutMs: 5000,
+    });
+    expectCliOk(result, {
       media_id: 'm1',
       status: 'ready',
       message: 'Media uploaded and ready to use',
     });
-    server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('media:upload uses configured default social set when only file arg is provided', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
+  it('uses configured default social set when only file arg is provided', withCliHarness(async ({ sandbox, server, apiKey, run, baseUrl, writeLocalConfig }) => {
+    await writeLocalConfig({ defaultSocialSetId: '9' });
+    const mediaFilePath = await writeMediaFixture(sandbox.cwd);
 
-  // Default social set configured locally.
-  const cfgDir = path.join(sandbox.cwd, '.typefully');
-  await fs.mkdir(cfgDir, { recursive: true });
-  await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify({ defaultSocialSetId: '9' }, null, 2));
+    server.expect('POST', '/v2/social-sets/9/media/upload', {
+      assert: authAssertFactory(apiKey),
+      json: uploadResponse(baseUrl),
+    });
 
-  const mediaFilePath = path.join(sandbox.cwd, 'img.jpg');
-  await fs.writeFile(mediaFilePath, Buffer.from('fake'));
+    server.expect('PUT', '/upload/m1', {
+      assert: (req) => {
+        assert.equal(req.headers['content-type'], undefined);
+        assert.equal(req.bodyText, 'fake');
+      },
+      json: { ok: true },
+    });
 
-  server.expect('POST', '/v2/social-sets/9/media/upload', {
-    assert: authAssertFactory(apiKey),
-    json: {
-      upload_url: baseUrl.replace('/v2', '') + '/upload/m1',
-      media_id: 'm1',
-    },
-  });
-
-  server.expect('PUT', '/upload/m1', {
-    assert: (req) => {
-      assert.equal(req.headers['content-type'], undefined);
-      assert.equal(req.bodyText, 'fake');
-    },
-    json: { ok: true },
-  });
-
-  try {
-    const result = await runCli(
-      ['media:upload', mediaFilePath, '--no-wait'],
-      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
-    );
-    assert.equal(result.code, 0);
-    assert.deepEqual(parseJsonOrNull(result.stdout), {
+    const result = await run(['media:upload', mediaFilePath, '--no-wait']);
+    expectCliOk(result, {
       media_id: 'm1',
       message: 'Upload complete. Use media:status to check processing.',
     });
-    server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
+  }));
+});
+
+describe('media:status', () => {
+  it('hits /media/<id> with default social set when omitted', withCliHarness(async ({ server, apiKey, run, writeLocalConfig }) => {
+    await writeLocalConfig({ defaultSocialSetId: '9' });
+
+    server.expect('GET', '/v2/social-sets/9/media/m1', {
+      assert: authAssertFactory(apiKey),
+      json: { id: 'm1', status: 'ready' },
+    });
+
+    const result = await run(['media:status', 'm1']);
+    expectCliOk(result, { id: 'm1', status: 'ready' });
+  }));
 });

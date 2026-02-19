@@ -1,11 +1,19 @@
-const { test, assert, http, spawn, fs, path, os, mkdtemp, makeSandbox, runCli, parseJsonOrNull, createMockServer, authAssertFactory } = require('./typefully-cli.test-helpers');
+const {
+  describe,
+  it,
+  assert,
+  fs,
+  path,
+  runCli,
+  parseJsonOrNull,
+  authAssertFactory,
+  withCliHarness,
+} = require('./typefully-cli.test-helpers');
 
-test('drafts:update with only --tags does not touch content (no platforms payload)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+describe('drafts', () => {
+  it('drafts:update with only --tags does not touch content (no platforms payload)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('PATCH', '/v2/social-sets/100813/drafts/d1', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -13,8 +21,6 @@ test('drafts:update with only --tags does not touch content (no platforms payloa
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', 'd1', '--tags', 'owner/me', '--social-set-id', '100813'],
       {
@@ -31,18 +37,11 @@ test('drafts:update with only --tags does not touch content (no platforms payloa
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
     assert.equal(server.requests.length, 1);
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('update-draft alias: tag-only update works and does not crash', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('update-draft alias: tag-only update works and does not crash', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('PATCH', '/v2/social-sets/100813/drafts/d1', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -50,8 +49,6 @@ test('update-draft alias: tag-only update works and does not crash', async () =>
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['update-draft', 'd1', '--tags', 'owner/me', '--social-set-id', '100813'],
       {
@@ -68,18 +65,11 @@ test('update-draft alias: tag-only update works and does not crash', async () =>
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
     assert.equal(server.requests.length, 1);
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('create-draft alias: positional text forwards correctly to drafts:create', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('create-draft alias: positional text forwards correctly to drafts:create', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('POST', '/v2/social-sets/100812/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -95,8 +85,6 @@ test('create-draft alias: positional text forwards correctly to drafts:create', 
     },
     json: { id: 'new-draft' },
   });
-
-  try {
     const result = await runCli(
       ['create-draft', 'Test content', '--social-set-id', '100812', '--platform', 'x', '--tags', 'owner/me'],
       {
@@ -113,23 +101,15 @@ test('create-draft alias: positional text forwards correctly to drafts:create', 
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'new-draft' });
     server.assertNoPendingExpectations();
     assert.equal(server.requests.length, 1);
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('draft target safety: drafts:get single arg with default social set requires --use-default', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-
+  it('draft target safety: drafts:get single arg with default social set requires --use-default', withCliHarness(async ({
+    sandbox, server, baseUrl 
+  }) => {
   // Create local config with a default social set.
   const cfgDir = path.join(sandbox.cwd, '.typefully');
   await fs.mkdir(cfgDir, { recursive: true });
   await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify({ defaultSocialSetId: '111' }, null, 2));
-
-  try {
     const result = await runCli(
       ['drafts:get', 'd99'],
       {
@@ -146,18 +126,11 @@ test('draft target safety: drafts:get single arg with default social set require
     const out = parseJsonOrNull(result.stdout);
     assert.ok(out?.error?.includes('Ambiguous arguments for drafts:get'));
     assert.equal(server.requests.length, 0);
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:get with --use-default uses configured default social set', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:get with --use-default uses configured default social set', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   const cfgDir = path.join(sandbox.cwd, '.typefully');
   await fs.mkdir(cfgDir, { recursive: true });
   await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify({ defaultSocialSetId: '111' }, null, 2));
@@ -166,8 +139,6 @@ test('drafts:get with --use-default uses configured default social set', async (
     assert: authAssertFactory(apiKey),
     json: { id: 'd99' },
   });
-
-  try {
     const result = await runCli(
       ['drafts:get', 'd99', '--use-default'],
       {
@@ -183,18 +154,11 @@ test('drafts:get with --use-default uses configured default social set', async (
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd99' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create chooses first connected platform when --platform omitted', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create chooses first connected platform when --platform omitted', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/55', {
     assert: authAssertFactory(apiKey),
     json: { id: '55', platforms: { x: {}, linkedin: {} } },
@@ -208,8 +172,6 @@ test('drafts:create chooses first connected platform when --platform omitted', a
     },
     json: { id: 'd1' },
   });
-
-  try {
     const result = await runCli(
       ['drafts:create', '55', '--text', 'Hello'],
       {
@@ -225,18 +187,11 @@ test('drafts:create chooses first connected platform when --platform omitted', a
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create --all targets all connected platforms', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create --all targets all connected platforms', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/55', {
     assert: authAssertFactory(apiKey),
     json: { id: '55', platforms: { linkedin: {}, x: {}, threads: {} } },
@@ -249,8 +204,6 @@ test('drafts:create --all targets all connected platforms', async () => {
     },
     json: { id: 'd1' },
   });
-
-  try {
     const result = await runCli(
       ['drafts:create', '55', '--all', '--text', 'Hello'],
       {
@@ -265,18 +218,11 @@ test('drafts:create --all targets all connected platforms', async () => {
 
     assert.equal(result.code, 0);
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:schedule sends publish_at payload', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:schedule sends publish_at payload', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -284,8 +230,6 @@ test('drafts:schedule sends publish_at payload', async () => {
     },
     json: { id: 'd1', scheduled: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:schedule', '9', 'd1', '--time', 'next-free-slot'],
       {
@@ -301,18 +245,11 @@ test('drafts:schedule sends publish_at payload', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', scheduled: true });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:list builds query params (status/tag/sort/limit)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:list builds query params (status/tag/sort/limit)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -324,8 +261,6 @@ test('drafts:list builds query params (status/tag/sort/limit)', async () => {
     },
     json: { results: [{ id: 'd1' }] },
   });
-
-  try {
     const result = await runCli(
       ['drafts:list', '9', '--limit', '3', '--status', 'scheduled', '--tag', 'owner/me', '--sort', '-created_at'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -333,18 +268,11 @@ test('drafts:list builds query params (status/tag/sort/limit)', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { results: [{ id: 'd1' }] });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:publish sends publish_at=now', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:publish sends publish_at=now', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -352,8 +280,6 @@ test('drafts:publish sends publish_at=now', async () => {
     },
     json: { id: 'd1', published: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:publish', '9', 'd1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -361,24 +287,15 @@ test('drafts:publish sends publish_at=now', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', published: true });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:delete uses DELETE and returns success payload', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:delete uses DELETE and returns success payload', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('DELETE', '/v2/social-sets/9/drafts/d1', {
     assert: authAssertFactory(apiKey),
     json: {},
   });
-
-  try {
     const result = await runCli(
       ['drafts:delete', '9', 'd1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -386,19 +303,12 @@ test('drafts:delete uses DELETE and returns success payload', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { success: true, message: 'Draft deleted' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update with no update fields errors (message mentions --tags)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-
-  try {
-    const result = await runCli(
+  it('drafts:update with no update fields errors (message mentions --tags)', withCliHarness(async ({
+    sandbox, server, baseUrl 
+  }) => {
+  const result = await runCli(
       ['drafts:update', '9', 'd1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: 'typ_test_key' } }
     );
@@ -407,18 +317,11 @@ test('drafts:update with no update fields errors (message mentions --tags)', asy
       error: 'At least one of --text, --file, --title, --schedule, --share, --notes, or --tags is required',
     });
     assert.equal(server.requests.length, 0);
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update can clear tags with --tags \"\" (sends empty array)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update can clear tags with --tags \"\" (sends empty array)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -426,8 +329,6 @@ test('drafts:update can clear tags with --tags \"\" (sends empty array)', async 
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--tags', ''],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -435,18 +336,11 @@ test('drafts:update can clear tags with --tags \"\" (sends empty array)', async 
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create splits threads on --- and attaches media only to first post', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create splits threads on --- and attaches media only to first post', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('POST', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -457,8 +351,6 @@ test('drafts:create splits threads on --- and attaches media only to first post'
     },
     json: { id: 'd1' },
   });
-
-  try {
     const threadText = 'First\n---\nSecond';
     const result = await runCli(
       ['drafts:create', '9', '--platform', 'x', '--text', threadText, '--media', 'm1,m2'],
@@ -467,18 +359,11 @@ test('drafts:create splits threads on --- and attaches media only to first post'
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create thread splitting supports CRLF (\\r\\n)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create thread splitting supports CRLF (\\r\\n)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('POST', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -489,8 +374,6 @@ test('drafts:create thread splitting supports CRLF (\\r\\n)', async () => {
     },
     json: { id: 'd1' },
   });
-
-  try {
     const threadText = 'First\r\n---\r\nSecond';
     const result = await runCli(
       ['drafts:create', '9', '--platform', 'x', '--text', threadText, '--media', 'm1,m2'],
@@ -499,18 +382,11 @@ test('drafts:create thread splitting supports CRLF (\\r\\n)', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update --append fetches existing draft and appends a new post', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update --append fetches existing draft and appends a new post', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/9/drafts/d1', {
     assert: authAssertFactory(apiKey),
     json: {
@@ -538,8 +414,6 @@ test('drafts:update --append fetches existing draft and appends a new post', asy
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--append', '--text', 'New', '--media', 'm1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -547,18 +421,11 @@ test('drafts:update --append fetches existing draft and appends a new post', asy
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update replaces posts and attaches media only to first post', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update replaces posts and attaches media only to first post', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/9/drafts/d1', {
     assert: authAssertFactory(apiKey),
     json: {
@@ -580,8 +447,6 @@ test('drafts:update replaces posts and attaches media only to first post', async
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--text', 'First\n---\nSecond', '--media', 'm1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -589,18 +454,11 @@ test('drafts:update replaces posts and attaches media only to first post', async
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create supports title/schedule/share/notes/tags/reply-to/community', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create supports title/schedule/share/notes/tags/reply-to/community', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('POST', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -624,8 +482,6 @@ test('drafts:create supports title/schedule/share/notes/tags/reply-to/community'
     },
     json: { id: 'd1' },
   });
-
-  try {
     const result = await runCli(
       [
         'drafts:create',
@@ -653,18 +509,11 @@ test('drafts:create supports title/schedule/share/notes/tags/reply-to/community'
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create reads from file via -f', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create reads from file via -f', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   const filePath = path.join(sandbox.cwd, 'post.txt');
   await fs.writeFile(filePath, 'From file');
 
@@ -675,54 +524,39 @@ test('drafts:create reads from file via -f', async () => {
     },
     json: { id: 'd1' },
   });
-
-  try {
     const result = await runCli(
       ['drafts:create', '9', '--platform', 'x', '-f', filePath],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
     );
     assert.equal(result.code, 0);
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create errors when both --all and --platform are provided', async () => {
-  const sandbox = await makeSandbox();
-  try {
+  it('drafts:create errors when both --all and --platform are provided', withCliHarness(async ({
+    sandbox 
+  }) => {
     const result = await runCli(
       ['drafts:create', '9', '--all', '--platform', 'x', '--text', 'Hello'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), { error: 'Cannot use both --all and --platform flags' });
-  } finally {
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create errors when neither --text nor --file are provided', async () => {
-  const sandbox = await makeSandbox();
-  try {
+  it('drafts:create errors when neither --text nor --file are provided', withCliHarness(async ({
+    sandbox 
+  }) => {
     const result = await runCli(
       ['drafts:create', '9', '--platform', 'x'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), { error: '--text or --file is required' });
-  } finally {
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update supports title/schedule/share/notes without fetching existing draft', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update supports title/schedule/share/notes without fetching existing draft', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -736,8 +570,6 @@ test('drafts:update supports title/schedule/share/notes without fetching existin
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--title', 'Title', '--schedule', 'now', '--share', '--notes', 'Notes', '--tags', 't1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -746,18 +578,11 @@ test('drafts:update supports title/schedule/share/notes without fetching existin
     assert.equal(server.requests.length, 1);
     server.assertNoPendingExpectations();
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update reads from file via -f and can target multiple platforms', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update reads from file via -f and can target multiple platforms', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   const filePath = path.join(sandbox.cwd, 'thread.txt');
   await fs.writeFile(filePath, 'First\n---\nSecond');
 
@@ -784,8 +609,6 @@ test('drafts:update reads from file via -f and can target multiple platforms', a
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--platform', 'x,linkedin', '-f', filePath, '--media', 'm1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -793,18 +616,11 @@ test('drafts:update reads from file via -f and can target multiple platforms', a
     assert.equal(result.code, 0);
     server.assertNoPendingExpectations();
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update supports -a shorthand for --append', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update supports -a shorthand for --append', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/9/drafts/d1', {
     assert: authAssertFactory(apiKey),
     json: {
@@ -826,28 +642,20 @@ test('drafts:update supports -a shorthand for --append', async () => {
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '-a', '--text', 'New'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
     );
     assert.equal(result.code, 0);
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('default social set safety: drafts:update/delete/schedule/publish require --use-default with a single arg', async () => {
-  const sandbox = await makeSandbox();
-
+  it('default social set safety: drafts:update/delete/schedule/publish require --use-default with a single arg', withCliHarness(async ({
+    sandbox 
+  }) => {
   const cfgDir = path.join(sandbox.cwd, '.typefully');
   await fs.mkdir(cfgDir, { recursive: true });
   await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify({ defaultSocialSetId: '9' }, null, 2));
-
-  try {
     for (const args of [
       ['drafts:update', 'd1', '--title', 'T'],
       ['drafts:delete', 'd1'],
@@ -862,17 +670,11 @@ test('default social set safety: drafts:update/delete/schedule/publish require -
       const out = parseJsonOrNull(result.stdout);
       assert.ok(out?.error?.includes('Ambiguous arguments'));
     }
-  } finally {
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:schedule/delete/publish work with --use-default and configured default social set', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:schedule/delete/publish work with --use-default and configured default social set', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   const cfgDir = path.join(sandbox.cwd, '.typefully');
   await fs.mkdir(cfgDir, { recursive: true });
   await fs.writeFile(path.join(cfgDir, 'config.json'), JSON.stringify({ defaultSocialSetId: '9' }, null, 2));
@@ -897,8 +699,6 @@ test('drafts:schedule/delete/publish work with --use-default and configured defa
     assert: authAssertFactory(apiKey),
     json: {},
   });
-
-  try {
     const sched = await runCli(['drafts:schedule', 'd1', '--time', 'next-free-slot', '--use-default'], {
       cwd: sandbox.cwd,
       env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey },
@@ -918,18 +718,11 @@ test('drafts:schedule/delete/publish work with --use-default and configured defa
     assert.equal(del.code, 0);
 
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:list accepts --social_set_id (snake_case)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:list accepts --social_set_id (snake_case)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -937,8 +730,6 @@ test('drafts:list accepts --social_set_id (snake_case)', async () => {
     },
     json: { results: [] },
   });
-
-  try {
     const result = await runCli(['drafts:list', '--social_set_id', '9', '--limit', '1'], {
       cwd: sandbox.cwd,
       env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey },
@@ -946,18 +737,11 @@ test('drafts:list accepts --social_set_id (snake_case)', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { results: [] });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:create reads from file via --file (long form)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:create reads from file via --file (long form)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   const filePath = path.join(sandbox.cwd, 'post.txt');
   await fs.writeFile(filePath, 'Hello from file', 'utf8');
 
@@ -968,8 +752,6 @@ test('drafts:create reads from file via --file (long form)', async () => {
     },
     json: { id: 'd1' },
   });
-
-  try {
     const result = await runCli(
       ['drafts:create', '9', '--platform', 'x', '--file', filePath],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -977,18 +759,11 @@ test('drafts:create reads from file via --file (long form)', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:update reads from file via --file (long form)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('drafts:update reads from file via --file (long form)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   const filePath = path.join(sandbox.cwd, 'post.txt');
   await fs.writeFile(filePath, 'Updated from file', 'utf8');
 
@@ -1004,8 +779,6 @@ test('drafts:update reads from file via --file (long form)', async () => {
     },
     json: { id: 'd1', ok: true },
   });
-
-  try {
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--platform', 'x', '--file', filePath],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -1013,19 +786,12 @@ test('drafts:update reads from file via --file (long form)', async () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('drafts:schedule errors when --time is missing', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-
-  try {
-    const result = await runCli(
+  it('drafts:schedule errors when --time is missing', withCliHarness(async ({
+    sandbox, server, baseUrl 
+  }) => {
+  const result = await runCli(
       ['drafts:schedule', '9', 'd1'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: 'typ_test_key' } }
     );
@@ -1034,18 +800,11 @@ test('drafts:schedule errors when --time is missing', async () => {
       error: '--time is required (use "next-free-slot" or ISO datetime)',
     });
     assert.equal(server.requests.length, 0);
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('global flag: drafts:list accepts --social-set-id (kebab-case)', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('global flag: drafts:list accepts --social-set-id (kebab-case)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('GET', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -1053,8 +812,6 @@ test('global flag: drafts:list accepts --social-set-id (kebab-case)', async () =
     },
     json: { results: [] },
   });
-
-  try {
     const result = await runCli(
       ['drafts:list', '--social-set-id', '9'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -1062,18 +819,11 @@ test('global flag: drafts:list accepts --social-set-id (kebab-case)', async () =
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { results: [] });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
-});
+  }));
 
-test('global flag: drafts:create accepts --social-set-id (kebab-case) with no positional social set', async () => {
-  const sandbox = await makeSandbox();
-  const server = createMockServer();
-  const { baseUrl } = await server.listen();
-  const apiKey = 'typ_test_key';
-
+  it('global flag: drafts:create accepts --social-set-id (kebab-case) with no positional social set', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
   server.expect('POST', '/v2/social-sets/9/drafts', {
     assert: (req) => {
       authAssertFactory(apiKey)(req);
@@ -1081,8 +831,6 @@ test('global flag: drafts:create accepts --social-set-id (kebab-case) with no po
     },
     json: { id: 'd1' },
   });
-
-  try {
     const result = await runCli(
       ['drafts:create', '--social-set-id', '9', '--platform', 'x', '--text', 'Hello'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
@@ -1090,8 +838,5 @@ test('global flag: drafts:create accepts --social-set-id (kebab-case) with no po
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
     server.assertNoPendingExpectations();
-  } finally {
-    await server.close();
-    await sandbox.cleanup();
-  }
+  }));
 });
