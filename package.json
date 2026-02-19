@@ -3,7 +3,15 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:drafts": "node --test tests/drafts.test.js",
+    "test:media": "node --test tests/media.test.js",
+    "test:queue": "node --test tests/queue.test.js",
+    "test:config": "node --test tests/config.test.js",
+    "test:social-sets": "node --test tests/social-sets.test.js",
+    "test:tags": "node --test tests/tags.test.js",
+    "test:me": "node --test tests/me.test.js",
+    "test:common": "node --test tests/common.test.js",
+    "test:all": "node --test tests/*.test.js"
   }
 }
-
