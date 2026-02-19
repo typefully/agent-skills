@@ -6,6 +6,19 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- Queue commands:
+  - `queue:get [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>`
+  - `queue:schedule:get [social_set_id]`
+  - `queue:schedule:put [social_set_id] --rules '<json-array>'`
+- `queue:get` accepts both kebab-case and snake_case date flags (`--start-date/--end-date` and `--start_date/--end_date`).
+
+### Fixed
+
+- Queue command validation now returns clear CLI errors for missing required date flags and invalid `--rules` JSON input.
+- Clarified queue docs in `SKILL.md` to explain that queue data is scoped per social set and includes that social set's scheduled drafts/posts.
+
 ## [2026-02-10]
 
 ### Added

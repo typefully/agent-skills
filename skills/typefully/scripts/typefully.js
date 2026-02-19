@@ -359,6 +359,37 @@ function getSocialSetIdFromParsed(parsed) {
   return value;
 }
 
+function getRequiredStringArgFromParsed(parsed, key, aliases = []) {
+  const candidates = [key, ...aliases];
+  let value = null;
+
+  for (const candidate of candidates) {
+    if (!Object.prototype.hasOwnProperty.call(parsed, candidate)) continue;
+    value = parsed[candidate];
+    break;
+  }
+
+  const preferred = `--${key}`;
+  const aliasText = aliases.length > 0
+    ? ` (or ${aliases.map(a => `--${a}`).join(', ')})`
+    : '';
+
+  if (value == null) {
+    error(`${preferred}${aliasText} is required`);
+  }
+  if (value === true) {
+    error(`${preferred}${aliasText} requires a value`);
+  }
+  if (typeof value !== 'string') {
+    error(`${preferred}${aliasText} must be a string`);
+  }
+  if (value.trim() === '') {
+    error(`${preferred}${aliasText} requires a non-empty value`);
+  }
+
+  return String(value);
+}
+
 function resolveSocialSetIdFromParsed(parsed, positionalId) {
   const flagId = getSocialSetIdFromParsed(parsed);
   if (flagId && positionalId && flagId !== positionalId) {
@@ -1177,6 +1208,48 @@ async function cmdDraftsPublish(args) {
   output(data);
 }
 
+async function cmdQueueGet(args) {
+  const parsed = parseArgs(args);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
+  const startDate = getRequiredStringArgFromParsed(parsed, 'start-date', ['start_date']);
+  const endDate = getRequiredStringArgFromParsed(parsed, 'end-date', ['end_date']);
+
+  const params = new URLSearchParams();
+  params.set('start_date', startDate);
+  params.set('end_date', endDate);
+
+  const data = await apiRequest('GET', `/social-sets/${socialSetId}/queue?${params}`);
+  output(data);
+}
+
+async function cmdQueueScheduleGet(args) {
+  const parsed = parseArgs(args);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
+
+  const data = await apiRequest('GET', `/social-sets/${socialSetId}/queue/schedule`);
+  output(data);
+}
+
+async function cmdQueueSchedulePut(args) {
+  const parsed = parseArgs(args);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
+  const rawRules = getRequiredStringArgFromParsed(parsed, 'rules');
+
+  let rules;
+  try {
+    rules = JSON.parse(rawRules);
+  } catch {
+    error('--rules must be valid JSON');
+  }
+
+  if (!Array.isArray(rules)) {
+    error('--rules must be a JSON array');
+  }
+
+  const data = await apiRequest('PUT', `/social-sets/${socialSetId}/queue/schedule`, { rules });
+  output(data);
+}
+
 async function cmdTagsList(args) {
   const parsed = parseArgs(args);
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
@@ -1405,6 +1478,14 @@ COMMANDS:
   drafts:publish <social_set_id> <draft_id>  Publish a draft immediately
     --use-default                            Required when using default social set with single arg
 
+  queue:get [social_set_id] --start-date <date> --end-date <date>
+                                            Get queue slots and scheduled drafts (uses default if ID omitted)
+                                            Also accepts: --start_date / --end_date
+  queue:schedule:get [social_set_id]        Get queue schedule rules (uses default if ID omitted)
+  queue:schedule:put [social_set_id] --rules <json_array>
+                                            Replace queue schedule rules (uses default if ID omitted)
+                                            Rule shape: [{"h":9,"m":30,"days":["mon","wed","fri"]}]
+
   tags:list [social_set_id]                  List all tags (uses default if ID omitted)
   tags:create [social_set_id] --name <name>  Create a new tag (uses default if ID omitted)
 
@@ -1477,6 +1558,15 @@ EXAMPLES:
   # Delete a draft (requires --use-default when using default social set)
   ./typefully.js drafts:delete 456 --use-default
 
+  # Get queue view for a date range
+  ./typefully.js queue:get 123 --start-date 2026-02-01 --end-date 2026-02-29
+
+  # Get current queue schedule rules
+  ./typefully.js queue:schedule:get 123
+
+  # Replace queue schedule rules
+  ./typefully.js queue:schedule:put 123 --rules '[{"h":9,"m":30,"days":["mon","wed","fri"]}]'
+
   # Append to existing thread
   ./typefully.js drafts:update 123 456 --append --text "New tweet at the end"
 
@@ -1522,6 +1612,9 @@ const COMMANDS = {
   'drafts:delete': cmdDraftsDelete,
   'drafts:schedule': cmdDraftsSchedule,
   'drafts:publish': cmdDraftsPublish,
+  'queue:get': cmdQueueGet,
+  'queue:schedule:get': cmdQueueScheduleGet,
+  'queue:schedule:put': cmdQueueSchedulePut,
   'tags:list': cmdTagsList,
   'tags:create': cmdTagsCreate,
   'media:upload': cmdMediaUpload,
