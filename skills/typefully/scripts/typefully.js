@@ -473,6 +473,25 @@ async function cmdSocialSetsGet(args) {
   output(data);
 }
 
+async function cmdLinkedInOrganizationsResolve(args) {
+  const parsed = parseArgs(args);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
+  const organizationUrl = getRequiredStringArgFromParsed(
+    parsed,
+    'organization-url',
+    ['organization_url', 'url']
+  );
+
+  const params = new URLSearchParams();
+  params.set('organization_url', organizationUrl);
+
+  const data = await apiRequest(
+    'GET',
+    `/social-sets/${socialSetId}/linkedin/organizations/resolve?${params}`
+  );
+  output(data);
+}
+
 function prompt(question) {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -1425,6 +1444,10 @@ COMMANDS:
 
   social-sets:list                           List all social sets
   social-sets:get [social_set_id]            Get social set details with platforms (uses default if ID omitted)
+  linkedin:organizations:resolve [social_set_id] [options]
+                                             Resolve LinkedIn organization URL for mention syntax
+    --organization-url <url>                 Public LinkedIn company/school URL
+                                             Also accepts: --organization_url / --url
 
   drafts:list [social_set_id] [options]      List drafts (uses default if ID omitted)
     --status <status>                        Filter by: draft, scheduled, published, error, publishing
@@ -1522,6 +1545,15 @@ EXAMPLES:
   # List all social sets
   ./typefully.js social-sets:list
 
+  # Resolve a LinkedIn URL to mention syntax
+  ./typefully.js linkedin:organizations:resolve 123 --organization-url "https://www.linkedin.com/company/typefullycom/"
+
+  # Same resolver using default social set
+  ./typefully.js linkedin:organizations:resolve --url "https://www.linkedin.com/company/typefullycom/"
+
+  # Use resolved mention syntax in a LinkedIn draft
+  ./typefully.js drafts:create 123 --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
+
   # Create a tweet (uses default social set if configured)
   ./typefully.js drafts:create --text "Hello world!"
 
@@ -1603,6 +1635,7 @@ const COMMANDS = {
   'me:get': cmdMeGet,
   'social-sets:list': cmdSocialSetsList,
   'social-sets:get': cmdSocialSetsGet,
+  'linkedin:organizations:resolve': cmdLinkedInOrganizationsResolve,
   'drafts:list': cmdDraftsList,
   'drafts:get': cmdDraftsGet,
   'drafts:create': cmdDraftsCreate,

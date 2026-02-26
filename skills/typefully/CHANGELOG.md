@@ -13,6 +13,11 @@ The format is based on Keep a Changelog.
   - `queue:schedule:get [social_set_id]`
   - `queue:schedule:put [social_set_id] --rules '<json-array>'`
 - `queue:get` accepts both kebab-case and snake_case date flags (`--start-date/--end-date` and `--start_date/--end_date`).
+- LinkedIn mention resolver command:
+  - `linkedin:organizations:resolve [social_set_id] --organization-url <linkedin_company_or_school_url>`
+  - Also accepts `--organization_url` and `--url` aliases.
+  - Returns mention metadata including `mention_text` (for example `@[Typefully](urn:li:organization:86779668)`).
+- LinkedIn mention workflow documentation in `SKILL.md`, including mention syntax and resolver-to-draft examples.
 
 ### Fixed
 

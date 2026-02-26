@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-02-19
+last-updated: 2026-02-26
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -109,6 +109,7 @@ When determining which social set to use:
 |--------------|--------|
 | "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
 | "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
+| "Mention a company on LinkedIn" | `linkedin:organizations:resolve --organization-url "<linkedin_url>"` then use returned `mention_text` in `drafts:create` |
 | "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
 | "X thread + LinkedIn post" (different content) | Create one draft, then `drafts:update` to add platform (see [Publishing to Multiple Platforms](#publishing-to-multiple-platforms)) |
 | "What's scheduled?" | `drafts:list --status scheduled` |
@@ -200,6 +201,28 @@ Here's what we shipped and why it matters..." --use-default
 
 So make sure to NEVER create multiple drafts unless the user explicitly wants separate drafts for each platform.
 
+## LinkedIn Mentions
+
+LinkedIn mentions are supported via text syntax inside post content:
+
+```text
+@[Company Name](urn:li:organization:123456)
+```
+
+Use the resolver command to convert a public LinkedIn organization URL into ready-to-paste mention syntax:
+
+```bash
+# Resolve a LinkedIn URL into mention metadata
+./scripts/typefully.js linkedin:organizations:resolve --organization-url "https://www.linkedin.com/company/typefullycom/"
+# Returns mention_text like: @[Typefully](urn:li:organization:86779668)
+```
+
+Then include that `mention_text` in your LinkedIn draft text:
+
+```bash
+./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
+```
+
 ## Commands Reference
 
 ### User & Social Sets
@@ -209,6 +232,7 @@ So make sure to NEVER create multiple drafts unless the user explicitly wants se
 | `me:get` | Get authenticated user info |
 | `social-sets:list` | List all social sets you can access |
 | `social-sets:get <id>` | Get social set details including connected platforms |
+| `linkedin:organizations:resolve [social_set_id] --organization-url <url>` | Resolve LinkedIn company/school URL into mention metadata (`mention_text`, `urn`) |
 
 ### Drafts
 
@@ -318,6 +342,16 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ### Create a cross-platform post (specific platforms)
 ```bash
 ./scripts/typefully.js drafts:create --platform x,linkedin,threads --text "Big announcement!"
+```
+
+### Resolve LinkedIn mention syntax from a company URL
+```bash
+./scripts/typefully.js linkedin:organizations:resolve --organization-url "https://www.linkedin.com/company/typefullycom/"
+```
+
+### Create a LinkedIn draft with a mention
+```bash
+./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
 ```
 
 ### Create a post on all connected platforms
@@ -479,6 +513,7 @@ When in doubt, create drafts for user review rather than publishing directly.
 - **Smart platform default**: If `--platform` is omitted, the first connected platform is auto-selected
 - **All platforms**: Use `--all` to post to all connected platforms at once
 - **Character limits**: X (280), LinkedIn (3000), Threads (500), Bluesky (300), Mastodon (500)
+- **LinkedIn mentions**: Use `@[Name](urn:li:organization:ID)` in post text; resolve IDs via `linkedin:organizations:resolve`
 - **Thread creation**: Use `---` on its own line to split into multiple posts (thread)
 - **Scheduling**: Use `next-free-slot` to let Typefully pick the optimal time
 - **Cross-posting**: List multiple platforms separated by commas: `--platform x,linkedin`
