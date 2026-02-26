@@ -6,6 +6,18 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [2026-02-26]
+
+### Added
+
+- LinkedIn mention resolver command:
+  - `linkedin:organizations:resolve [social_set_id] --organization-url <linkedin_company_or_school_url>`
+  - Also accepts `--organization_url` and `--url` aliases.
+  - Returns mention metadata including `mention_text` (for example `@[Typefully](urn:li:organization:86779668)`).
+- LinkedIn mention workflow documentation in `SKILL.md`, including mention syntax and resolver-to-draft examples.
+
+## [2026-02-19]
+
 ### Added
 
 - Queue commands:
