@@ -10,11 +10,23 @@ The format is based on Keep a Changelog.
 
 ### Added
 
+- `--quote-post-url <url>` (alias: `--quote-url`) for:
+  - `drafts:create`
+  - `drafts:update`
+- X quote-post payload support in draft create/update (`platforms.x.posts[].quote_post_url`).
+- CLI help/usage examples for creating and updating quote posts on X.
 - LinkedIn mention resolver command:
   - `linkedin:organizations:resolve [social_set_id] --organization-url <linkedin_company_or_school_url>`
   - Also accepts `--organization_url` and `--url` aliases.
   - Returns mention metadata including `mention_text` (for example `@[Typefully](urn:li:organization:86779668)`).
 - LinkedIn mention workflow documentation in `SKILL.md`, including mention syntax and resolver-to-draft examples.
+
+### Changed
+
+- Quote URLs are now pre-validated as X-only in the CLI:
+  - clear client-side error when quote flags are used without targeting X.
+  - unchanged behavior for non-quote draft create/update flows.
+- API `400 VALIDATION_ERROR` responses are surfaced as explicit validation messages in CLI output.
 
 ## [2026-02-19]
 

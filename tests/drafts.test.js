@@ -314,7 +314,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, or --tags is required',
+      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, or --quote-post-url is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -508,6 +508,97 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create applies quote_post_url only to X posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
+  const quoteUrl = 'https://x.com/typefullyapp/status/1234567890123456789';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: 'Hello', quote_post_url: quoteUrl }],
+          },
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'Hello' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x,linkedin', '--text', 'Hello', '--quote-post-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create accepts --quote-url alias', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
+  const quoteUrl = 'https://x.com/typefullyapp/status/1234567890123456789';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.equal(req.bodyJson.platforms.x.posts[0].quote_post_url, quoteUrl);
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Hello', '--quote-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create errors when quote URL is used without X platform', withCliHarness(async ({
+    sandbox, server 
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'linkedin', '--text', 'Hello', '--quote-post-url', 'https://x.com/user/status/123'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create surfaces API VALIDATION_ERROR messages for quote URLs', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
+  const validationMessage = 'Invalid quote_post_url. Expected an X/Twitter post URL like https://x.com/<username>/status/<id>.';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: authAssertFactory(apiKey),
+    status: 400,
+    json: {
+      code: 'VALIDATION_ERROR',
+      message: validationMessage,
+    },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Hello', '--quote-post-url', 'https://example.com/not-x'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 1);
+    const out = parseJsonOrNull(result.stdout);
+    assert.equal(out?.error, `Validation error: ${validationMessage}`);
+    assert.deepEqual(out?.response, {
+      code: 'VALIDATION_ERROR',
+      message: validationMessage,
+    });
     server.assertNoPendingExpectations();
   }));
 
@@ -786,6 +877,99 @@ describe('drafts', () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update applies quote_post_url only to X posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
+  const quoteUrl = 'https://x.com/typefullyapp/status/1234567890123456789';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: { enabled: true, posts: [{ text: 'Old X' }] },
+        linkedin: { enabled: true, posts: [{ text: 'Old LI' }] },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: 'Hello', quote_post_url: quoteUrl }],
+          },
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'Hello' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'x,linkedin', '--text', 'Hello', '--quote-post-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update can set quote URL without changing text', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey 
+  }) => {
+  const quoteUrl = 'https://x.com/typefullyapp/status/1234567890123456789';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: { enabled: true, posts: [{ text: 'Existing text' }] },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: 'Existing text', quote_post_url: quoteUrl }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--quote-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update errors when quote URL is used without X platform', withCliHarness(async ({
+    sandbox, server 
+  }) => {
+  const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'linkedin', '--text', 'Hello', '--quote-post-url', 'https://x.com/user/status/123'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+    });
+    assert.equal(server.requests.length, 0);
   }));
 
   it('drafts:schedule errors when --time is missing', withCliHarness(async ({

@@ -221,6 +221,35 @@ function requireApiKey() {
   return result.key;
 }
 
+function extractApiErrorMessage(data) {
+  if (!data || typeof data !== 'object') return null;
+
+  if (typeof data.message === 'string' && data.message.trim() !== '') {
+    return data.message;
+  }
+
+  if (typeof data.error === 'string' && data.error.trim() !== '') {
+    return data.error;
+  }
+
+  if (data.error && typeof data.error.message === 'string' && data.error.message.trim() !== '') {
+    return data.error.message;
+  }
+
+  if (Array.isArray(data.errors)) {
+    for (const item of data.errors) {
+      if (typeof item === 'string' && item.trim() !== '') {
+        return item;
+      }
+      if (item && typeof item.message === 'string' && item.message.trim() !== '') {
+        return item.message;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function apiRequest(method, endpoint, body = null, opts = {}) {
   const { exitOnError = true } = opts;
   const apiKey = requireApiKey();
@@ -249,6 +278,11 @@ async function apiRequest(method, endpoint, body = null, opts = {}) {
 
   if (!response.ok) {
     if (exitOnError) {
+      const validationCode = data?.code || data?.error?.code;
+      if (response.status === 400 && validationCode === 'VALIDATION_ERROR') {
+        const validationMessage = extractApiErrorMessage(data) || 'Request validation failed';
+        error(`Validation error: ${validationMessage}`, { response: data });
+      }
       error(`HTTP ${response.status}`, { response: data });
     }
     const err = new Error(`HTTP ${response.status}`);
@@ -325,6 +359,34 @@ function pushStringFlag(argv, parsed, key, flagName, opts) {
   if (!Object.prototype.hasOwnProperty.call(parsed, key)) return;
   const value = coerceFlagValueToString(parsed[key], flagName, opts);
   argv.push(flagName, value);
+}
+
+function getQuotePostUrlFromParsed(parsed) {
+  const hasPrimary = Object.prototype.hasOwnProperty.call(parsed, 'quote-post-url');
+  const hasAlias = Object.prototype.hasOwnProperty.call(parsed, 'quote-url');
+
+  if (!hasPrimary && !hasAlias) return null;
+
+  const primary = hasPrimary
+    ? coerceFlagValueToString(parsed['quote-post-url'], '--quote-post-url')
+    : null;
+  const alias = hasAlias
+    ? coerceFlagValueToString(parsed['quote-url'], '--quote-url')
+    : null;
+
+  if (primary && alias && primary !== alias) {
+    error('Conflicting quote post URL values', {
+      '--quote-post-url': primary,
+      '--quote-url': alias,
+    });
+  }
+
+  return primary || alias;
+}
+
+function addQuotePostUrl(posts, quotePostUrl) {
+  if (!quotePostUrl) return posts;
+  return posts.map(post => ({ ...post, quote_post_url: quotePostUrl }));
 }
 
 function parseCsvArg(value, flagName) {
@@ -901,6 +963,7 @@ async function getAllConnectedPlatforms(socialSetId) {
 async function cmdDraftsCreate(args) {
   const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
+  const quotePostUrl = getQuotePostUrlFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -939,6 +1002,9 @@ async function cmdDraftsCreate(args) {
   }
 
   const platformList = platforms.split(',').map(p => p.trim());
+  if (quotePostUrl && !platformList.includes('x')) {
+    error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
+  }
 
   // Split text into posts (thread support)
   const posts = splitThreadText(text);
@@ -947,7 +1013,7 @@ async function cmdDraftsCreate(args) {
   const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
 
   // Build posts array
-  const postsArray = posts.map((postText, index) => {
+  const basePostsArray = posts.map((postText, index) => {
     const post = { text: postText };
     // Attach media only to first post
     if (index === 0 && mediaIds.length > 0) {
@@ -959,6 +1025,9 @@ async function cmdDraftsCreate(args) {
   // Build platforms object
   const platformsObj = {};
   for (const platform of platformList) {
+    const postsArray = platform === 'x'
+      ? addQuotePostUrl(basePostsArray, quotePostUrl)
+      : basePostsArray;
     const platformConfig = {
       enabled: true,
       posts: postsArray,
@@ -1008,6 +1077,7 @@ async function cmdDraftsCreate(args) {
 async function cmdDraftsUpdate(args) {
   const parsed = parseArgs(args, { append: 'boolean', share: 'boolean', 'use-default': 'boolean' });
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
+  const quotePostUrl = getQuotePostUrlFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1020,7 +1090,15 @@ async function cmdDraftsUpdate(args) {
 
   const body = {};
 
-  if (text) {
+  const shouldUpdatePosts = Boolean(text || quotePostUrl);
+  if (shouldUpdatePosts) {
+    const explicitPlatformList = parsed.platform
+      ? parsed.platform.split(',').map(p => p.trim())
+      : null;
+    if (quotePostUrl && explicitPlatformList && !explicitPlatformList.includes('x')) {
+      error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
+    }
+
     // Parse media IDs
     const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
 
@@ -1029,9 +1107,9 @@ async function cmdDraftsUpdate(args) {
 
     // Determine which platforms to update
     let platformList;
-    if (parsed.platform) {
+    if (explicitPlatformList) {
       // Explicit platform(s) specified
-      platformList = parsed.platform.split(',').map(p => p.trim());
+      platformList = explicitPlatformList;
     } else {
       // Default to draft's existing enabled platforms
       platformList = Object.entries(existing.platforms || {})
@@ -1048,42 +1126,59 @@ async function cmdDraftsUpdate(args) {
       }
     }
 
+    if (quotePostUrl && !platformList.includes('x')) {
+      error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
+    }
+
     let postsArray;
 
-    if (parsed.append) {
-      // Extract posts from the first enabled platform
-      let existingPosts = [];
-      for (const [, config] of Object.entries(existing.platforms || {})) {
-        if (config.enabled && config.posts) {
-          existingPosts = config.posts;
-          break;
+    if (text) {
+      if (parsed.append) {
+        // Extract posts from the first enabled platform
+        let existingPosts = [];
+        for (const [, config] of Object.entries(existing.platforms || {})) {
+          if (config.enabled && config.posts) {
+            existingPosts = config.posts;
+            break;
+          }
         }
-      }
 
-      // Append new post
-      const newPost = { text };
-      if (mediaIds.length > 0) {
-        newPost.media_ids = mediaIds;
-      }
-      postsArray = [...existingPosts, newPost];
-    } else {
-      // Replace with new posts
-      const posts = splitThreadText(text);
-      postsArray = posts.map((postText, index) => {
-        const post = { text: postText };
-        if (index === 0 && mediaIds.length > 0) {
-          post.media_ids = mediaIds;
+        // Append new post
+        const newPost = { text };
+        if (mediaIds.length > 0) {
+          newPost.media_ids = mediaIds;
         }
-        return post;
-      });
+        postsArray = [...existingPosts, newPost];
+      } else {
+        // Replace with new posts
+        const posts = splitThreadText(text);
+        postsArray = posts.map((postText, index) => {
+          const post = { text: postText };
+          if (index === 0 && mediaIds.length > 0) {
+            post.media_ids = mediaIds;
+          }
+          return post;
+        });
+      }
+    } else {
+      // Quote-only update: preserve existing X posts and add quote URL.
+      const existingXPosts = existing.platforms?.x?.posts;
+      if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
+        error('Cannot apply --quote-post-url because this draft has no existing X posts');
+      }
+      postsArray = existingXPosts;
+      platformList = ['x'];
     }
 
     // Build platforms object
     const platformsObj = {};
     for (const p of platformList) {
+      const platformPosts = p === 'x'
+        ? addQuotePostUrl(postsArray, quotePostUrl)
+        : postsArray;
       platformsObj[p] = {
         enabled: true,
-        posts: postsArray,
+        posts: platformPosts,
       };
     }
     body.platforms = platformsObj;
@@ -1110,7 +1205,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, --notes, or --tags is required');
+    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, or --quote-post-url is required');
   }
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, body);
@@ -1151,6 +1246,8 @@ async function cmdCreateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
   pushStringFlag(forwarded, parsed, 'reply-to', '--reply-to');
   pushStringFlag(forwarded, parsed, 'community', '--community');
+  const quotePostUrl = getQuotePostUrlFromParsed(parsed);
+  if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1186,6 +1283,8 @@ async function cmdUpdateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'title', '--title');
   pushStringFlag(forwarded, parsed, 'schedule', '--schedule');
   pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
+  const quotePostUrl = getQuotePostUrlFromParsed(parsed);
+  if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1471,6 +1570,7 @@ COMMANDS:
     --tags <tag_slugs>                       Comma-separated tag slugs
     --reply-to <url>                         URL of X post to reply to
     --community <id>                         X community ID to post to
+    --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
@@ -1484,6 +1584,7 @@ COMMANDS:
     --title <title>                          New draft title
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
     --tags <tag_slugs>                       Comma-separated tag slugs
+    --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --use-default                            Required when using default social set with single arg
@@ -1607,6 +1708,12 @@ EXAMPLES:
 
   # Post to an X community
   ./typefully.js drafts:create 123 --platform x --text "Community post" --community 1493446837214187523
+
+  # Create a quote post on X
+  ./typefully.js drafts:create 123 --platform x --text "My take on this" --quote-post-url "https://x.com/user/status/1234567890123456789"
+
+  # Update an X draft to quote a post
+  ./typefully.js drafts:update 123 456 --platform x --text "Updated take" --quote-post-url "https://x.com/user/status/1234567890123456789"
 
   # Create draft with share URL
   ./typefully.js drafts:create 123 --platform x --text "Check this out" --share

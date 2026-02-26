@@ -250,9 +250,11 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 | `drafts:create ... --media <media_ids>` | Create draft with attached media |
 | `drafts:create ... --reply-to <url>` | Reply to an existing X post |
 | `drafts:create ... --community <id>` | Post to an X community |
+| `drafts:create ... --quote-post-url <url>` | Quote an existing X post URL |
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
 | `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
+| `drafts:update ... --quote-post-url <url>` | Update X post(s) in a draft to quote an existing post URL |
 | `drafts:update [social_set_id] <draft_id> --tags "tag1,tag2"` | Update tags on an existing draft (content unchanged) |
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
@@ -397,6 +399,16 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ### Post to an X community
 ```bash
 ./scripts/typefully.js drafts:create --platform x --text "Community update" --community 1493446837214187523
+```
+
+### Create an X quote post
+```bash
+./scripts/typefully.js drafts:create --platform x --text "My take on this" --quote-post-url "https://x.com/user/status/1234567890123456789"
+```
+
+### Update a draft to quote an X post
+```bash
+./scripts/typefully.js drafts:update 456 --platform x --quote-post-url "https://x.com/user/status/1234567890123456789" --use-default
 ```
 
 ### Create draft with share URL
