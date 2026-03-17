@@ -78,6 +78,16 @@ Ask your AI agent things like:
 - "Create a thread about [topic]"
 - "Post this to X and LinkedIn"
 
+## Local Development
+
+To test this skill locally, install it from the repo root:
+
+```bash
+npx skills add .
+```
+
+Then test it in your agent to verify the latest local changes behave as expected.
+
 ## Supported Platforms
 
 - X (formerly Twitter)

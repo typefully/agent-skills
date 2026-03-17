@@ -6,6 +6,27 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
+
+### Changed
+
+- `analytics:posts:list` now matches the backend analytics default: replies are excluded unless you explicitly pass `--include-replies`.
+- Analytics docs and examples now explain the non-reply default and the explicit reply-inclusion workflow.
+
+## [2026-03-17]
+
+### Added
+
+- `analytics:posts:list [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` to fetch X post analytics for an inclusive date range.
+- `analytics:posts:list` supports `--limit` / `--offset` pagination and `--start_date` / `--end_date` aliases.
+- Typefully skill docs now cover the X analytics workflow, command reference, examples, and metrics returned by the API.
+
+### Changed
+
+- `analytics:posts:list` now defaults `--platform` to `x` and returns a clear CLI error if another platform is requested, matching current API support.
+
 ## [2026-02-26]
 
 ### Added

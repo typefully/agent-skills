@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-02-26
+last-updated: 2026-03-17
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -118,6 +118,8 @@ When determining which social set to use:
 | "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <draft_id> --use-default` |
 | "Add notes/ideas to the draft" | `drafts:create ... --scratchpad "Your notes here"` |
 | "Check available tags" | `tags:list` |
+| "Show my X post analytics for last week" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
+| "Show my X post analytics including replies" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --include-replies` |
 | "Show my queue for next week" | `queue:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 
 ## Workflow
@@ -233,6 +235,27 @@ Then include that `mention_text` in your LinkedIn draft text:
 | `social-sets:list` | List all social sets you can access |
 | `social-sets:get <id>` | Get social set details including connected platforms |
 | `linkedin:organizations:resolve [social_set_id] --organization-url <url>` | Resolve LinkedIn company/school URL into mention metadata (`mention_text`, `urn`) |
+
+### Analytics
+
+All analytics commands support an optional `[social_set_id]` - if omitted, the configured default is used.
+
+The public API currently supports **X post analytics only** on this endpoint. The CLI defaults `--platform` to `x`, so you can usually omit it.
+
+Replies are now **excluded by default** so the result set matches the main published-post view more closely. Add `--include-replies` when you explicitly want reply posts included.
+
+Analytics responses return post-level metrics for the requested inclusive date range, including:
+- `impressions`
+- engagement totals and breakdowns like `likes`, `comments`, `shares`, `quotes`, `saves`, `profile_clicks`, and `link_clicks`
+
+| Command | Description |
+|---------|-------------|
+| `analytics:posts:list [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | List X posts with normalized analytics metrics for an inclusive date range |
+| `analytics:posts:list ... --start_date <YYYY-MM-DD> --end_date <YYYY-MM-DD>` | Snake case aliases for date flags (copied from API docs) |
+| `analytics:posts:list ... --include-replies` | Include X replies in the results (excluded by default) |
+| `analytics:posts:list ... --include_replies` | Snake case alias for the include-replies flag |
+| `analytics:posts:list ... --limit 100 --offset 25` | Paginate through results |
+| `analytics:posts:list ... --platform x` | Explicitly request X analytics (currently the only supported platform) |
 
 ### Drafts
 
@@ -379,6 +402,21 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ### Get queue view for a date range
 ```bash
 ./scripts/typefully.js queue:get --start-date 2026-02-01 --end-date 2026-02-29
+```
+
+### Get X post analytics for a date range
+```bash
+./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07
+```
+
+### Get X post analytics including replies
+```bash
+./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07 --include-replies
+```
+
+### Paginate through X analytics results
+```bash
+./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-31 --limit 100 --offset 100
 ```
 
 ### Get queue schedule
@@ -531,5 +569,6 @@ When in doubt, create drafts for user review rather than publishing directly.
 - **Cross-posting**: List multiple platforms separated by commas: `--platform x,linkedin`
 - **Draft titles**: Use `--title` for internal organization (not posted to social media)
 - **Draft scratchpad**: Use `--scratchpad` to attach notes to the draft in Typefully (NOT local files!) - perfect for thread ideas, research, context
+- **X analytics**: Use `analytics:posts:list --start-date ... --end-date ...` to fetch post metrics for a social set; replies are excluded by default, and `--include-replies` opts back in
 - **Read from file**: Use `--file ./post.txt` instead of `--text` to read content from a file
 - **Sorting drafts**: Use `--sort` with values like `created_at`, `-created_at`, `scheduled_date`, etc.
