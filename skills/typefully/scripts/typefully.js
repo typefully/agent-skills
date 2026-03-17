@@ -555,13 +555,14 @@ async function cmdLinkedInOrganizationsResolve(args) {
 }
 
 async function cmdAnalyticsPostsList(args) {
-  const parsed = parseArgs(args);
+  const parsed = parseArgs(args, { 'include-replies': 'boolean', 'include_replies': 'boolean' });
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
   const startDate = getRequiredStringArgFromParsed(parsed, 'start-date', ['start_date']);
   const endDate = getRequiredStringArgFromParsed(parsed, 'end-date', ['end_date']);
   const platform = (parsed.platform
     ? coerceFlagValueToString(parsed.platform, '--platform')
     : 'x').toLowerCase();
+  const includeReplies = Boolean(parsed['include-replies'] || parsed.include_replies);
 
   if (platform !== 'x') {
     error('Only X analytics are currently supported by the Typefully API', {
@@ -575,6 +576,7 @@ async function cmdAnalyticsPostsList(args) {
   params.set('end_date', endDate);
   if (parsed.limit) params.set('limit', parsed.limit);
   if (parsed.offset) params.set('offset', parsed.offset);
+  if (includeReplies) params.set('include_replies', 'true');
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/analytics/${platform}/posts?${params}`);
   output(data);
@@ -1580,6 +1582,7 @@ COMMANDS:
                                              Also accepts: --start_date
     --end-date <YYYY-MM-DD>                  Inclusive end date (required)
                                              Also accepts: --end_date
+    --include-replies, --include_replies     Include X replies in results (excluded by default)
     --limit <n>                              Max results per page (default: 25, max: 100)
     --offset <n>                             Number of results to skip (default: 0)
 
@@ -1692,6 +1695,9 @@ EXAMPLES:
 
   # Same analytics query using default social set
   ./typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07
+
+  # Include replies in X analytics results
+  ./typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07 --include-replies
 
   # Use resolved mention syntax in a LinkedIn draft
   ./typefully.js drafts:create 123 --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."

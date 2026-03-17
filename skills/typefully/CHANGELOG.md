@@ -6,6 +6,15 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
+
+### Changed
+
+- `analytics:posts:list` now matches the backend analytics default: replies are excluded unless you explicitly pass `--include-replies`.
+- Analytics docs and examples now explain the non-reply default and the explicit reply-inclusion workflow.
+
 ## [2026-03-17]
 
 ### Added
