@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-03-17
+last-updated: 2026-04-24
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -118,8 +118,10 @@ When determining which social set to use:
 | "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <draft_id> --use-default` |
 | "Add notes/ideas to the draft" | `drafts:create ... --scratchpad "Your notes here"` |
 | "Check available tags" | `tags:list` |
+| "Check my publishing quota" | `social-sets:get` and inspect `publishing_quota` |
 | "Show my X post analytics for last week" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 | "Show my X post analytics including replies" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --include-replies` |
+| "Show my X follower growth" | `analytics:followers:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 | "Show my queue for next week" | `queue:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 
 ## Workflow
@@ -233,20 +235,29 @@ Then include that `mention_text` in your LinkedIn draft text:
 |---------|-------------|
 | `me:get` | Get authenticated user info |
 | `social-sets:list` | List all social sets you can access |
-| `social-sets:get <id>` | Get social set details including connected platforms |
+| `social-sets:get <id>` | Get social set details including connected platforms and `publishing_quota` |
 | `linkedin:organizations:resolve [social_set_id] --organization-url <url>` | Resolve LinkedIn company/school URL into mention metadata (`mention_text`, `urn`) |
+
+`social-sets:get` returns a `publishing_quota` object when available:
+- `used` - published drafts already counted in the current quota window
+- `remaining` - remaining publish slots, or `"unlimited"`
+- `resets_at` - when the current quota window resets
+
+Use it before publishing/scheduling when the user asks about remaining posting capacity or when a publish/schedule request fails with quota copy.
 
 ### Analytics
 
 All analytics commands support an optional `[social_set_id]` - if omitted, the configured default is used.
 
-The public API currently supports **X post analytics only** on this endpoint. The CLI defaults `--platform` to `x`, so you can usually omit it.
+The public API currently supports **X analytics only** on these endpoints. The CLI defaults `--platform` to `x`, so you can usually omit it.
 
 Replies are now **excluded by default** so the result set matches the main published-post view more closely. Add `--include-replies` when you explicitly want reply posts included.
 
 Analytics responses return post-level metrics for the requested inclusive date range, including:
 - `impressions`
 - engagement totals and breakdowns like `likes`, `comments`, `shares`, `quotes`, `saves`, `profile_clicks`, and `link_clicks`
+
+Follower analytics returns `current_followers_count` plus daily `data` points with `date` and `followers_count`. If you omit dates, the API returns the default recent range.
 
 | Command | Description |
 |---------|-------------|
@@ -256,6 +267,10 @@ Analytics responses return post-level metrics for the requested inclusive date r
 | `analytics:posts:list ... --include_replies` | Snake case alias for the include-replies flag |
 | `analytics:posts:list ... --limit 100 --offset 25` | Paginate through results |
 | `analytics:posts:list ... --platform x` | Explicitly request X analytics (currently the only supported platform) |
+| `analytics:followers:get [social_set_id]` | Get X follower counts for the API default date range |
+| `analytics:followers:get ... --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Get X follower counts for an inclusive date range |
+| `analytics:followers:get ... --start_date <YYYY-MM-DD> --end_date <YYYY-MM-DD>` | Snake case aliases for date flags |
+| `analytics:followers:get ... --platform x` | Explicitly request X followers analytics (currently the only supported platform) |
 
 ### Drafts
 
@@ -274,10 +289,14 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 | `drafts:create ... --reply-to <url>` | Reply to an existing X post |
 | `drafts:create ... --community <id>` | Post to an X community |
 | `drafts:create ... --quote-post-url <url>` | Quote an existing X post URL |
+| `drafts:create ... --paid-partnership` | Label X post(s) as paid partnership |
+| `drafts:create ... --made-with-ai` | Label X post(s) as made with AI |
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
 | `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
 | `drafts:update ... --quote-post-url <url>` | Update X post(s) in a draft to quote an existing post URL |
+| `drafts:update ... --paid-partnership` | Label existing or updated X post(s) as paid partnership |
+| `drafts:update ... --made-with-ai` | Label existing or updated X post(s) as made with AI |
 | `drafts:update [social_set_id] <draft_id> --tags "tag1,tag2"` | Update tags on an existing draft (content unchanged) |
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
@@ -419,6 +438,16 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-31 --limit 100 --offset 100
 ```
 
+### Get X followers analytics for the default range
+```bash
+./scripts/typefully.js analytics:followers:get
+```
+
+### Get X followers analytics for a date range
+```bash
+./scripts/typefully.js analytics:followers:get --start-date 2026-03-01 --end-date 2026-03-31
+```
+
 ### Get queue schedule
 ```bash
 ./scripts/typefully.js queue:schedule:get
@@ -444,9 +473,19 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ./scripts/typefully.js drafts:create --platform x --text "My take on this" --quote-post-url "https://x.com/user/status/1234567890123456789"
 ```
 
+### Create an X post with content disclosure labels
+```bash
+./scripts/typefully.js drafts:create --platform x --text "Sponsored AI-assisted update" --paid-partnership --made-with-ai
+```
+
 ### Update a draft to quote an X post
 ```bash
 ./scripts/typefully.js drafts:update 456 --platform x --quote-post-url "https://x.com/user/status/1234567890123456789" --use-default
+```
+
+### Add an X content disclosure label to an existing draft
+```bash
+./scripts/typefully.js drafts:update 456 --made-with-ai --use-default
 ```
 
 ### Create draft with share URL
@@ -570,5 +609,8 @@ When in doubt, create drafts for user review rather than publishing directly.
 - **Draft titles**: Use `--title` for internal organization (not posted to social media)
 - **Draft scratchpad**: Use `--scratchpad` to attach notes to the draft in Typefully (NOT local files!) - perfect for thread ideas, research, context
 - **X analytics**: Use `analytics:posts:list --start-date ... --end-date ...` to fetch post metrics for a social set; replies are excluded by default, and `--include-replies` opts back in
+- **X followers analytics**: Use `analytics:followers:get --start-date ... --end-date ...` to fetch daily follower counts, or omit dates for the API default range
+- **X content disclosures**: Use `--paid-partnership` and/or `--made-with-ai` on `drafts:create` or `drafts:update`; these flags are X-only and are applied only to X posts
+- **Publishing quota**: Use `social-sets:get` and inspect `publishing_quota` to see remaining publish capacity and reset time
 - **Read from file**: Use `--file ./post.txt` instead of `--text` to read content from a file
 - **Sorting drafts**: Use `--sort` with values like `created_at`, `-created_at`, `scheduled_date`, etc.

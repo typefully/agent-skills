@@ -8,12 +8,15 @@ The format is based on Keep a Changelog.
 
 ### Added
 
+- `analytics:followers:get [social_set_id]` to fetch X follower analytics, with optional `--start-date` / `--end-date` date filters and snake_case aliases.
 - `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
+- `--paid-partnership` / `--paid_partnership` and `--made-with-ai` / `--made_with_ai` for X draft create/update disclosure flags.
+- Typefully skill docs now explain how to check `publishing_quota` with `social-sets:get`.
 
 ### Changed
 
 - `analytics:posts:list` now matches the backend analytics default: replies are excluded unless you explicitly pass `--include-replies`.
-- Analytics docs and examples now explain the non-reply default and the explicit reply-inclusion workflow.
+- Analytics docs and examples now explain X post analytics, X follower analytics, and the explicit reply-inclusion workflow.
 
 ## [2026-03-17]
 

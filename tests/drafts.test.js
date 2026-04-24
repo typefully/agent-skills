@@ -314,7 +314,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, or --quote-post-url is required',
+      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, or --made-with-ai is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -562,6 +562,36 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:create applies X content disclosures only to X posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: 'Sponsored AI update', paid_partnership: true, made_with_ai: true }],
+          },
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'Sponsored AI update' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x,linkedin', '--text', 'Sponsored AI update', '--paid-partnership', '--made-with-ai'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
   it('drafts:create errors when quote URL is used without X platform', withCliHarness(async ({
     sandbox, server 
   }) => {
@@ -572,6 +602,20 @@ describe('drafts', () => {
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
       error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create errors when X content disclosures are used without X platform', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'linkedin', '--text', 'Hello', '--made-with-ai'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -951,6 +995,48 @@ describe('drafts', () => {
   });
     const result = await runCli(
       ['drafts:update', '9', 'd1', '--quote-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update can set X content disclosures without changing text', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: {
+          enabled: true,
+          posts: [{ text: 'Existing 1' }, { text: 'Existing 2' }],
+        },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [
+              { text: 'Existing 1', made_with_ai: true },
+              { text: 'Existing 2', made_with_ai: true },
+            ],
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--made-with-ai'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
     );
     assert.equal(result.code, 0);
