@@ -8,6 +8,7 @@
     "test:media": "vitest run tests/media.test.js",
     "test:queue": "vitest run tests/queue.test.js",
     "test:config": "vitest run tests/config.test.js",
+    "test:analytics": "vitest run tests/analytics.test.js",
     "test:social-sets": "vitest run tests/social-sets.test.js",
     "test:tags": "vitest run tests/tags.test.js",
     "test:me": "vitest run tests/me.test.js",

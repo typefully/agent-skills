@@ -389,6 +389,40 @@ function addQuotePostUrl(posts, quotePostUrl) {
   return posts.map(post => ({ ...post, quote_post_url: quotePostUrl }));
 }
 
+function getXContentDisclosuresFromParsed(parsed) {
+  const paidPartnership = Boolean(parsed['paid-partnership'] || parsed.paid_partnership);
+  const madeWithAi = Boolean(parsed['made-with-ai'] || parsed.made_with_ai);
+
+  return {
+    paidPartnership,
+    madeWithAi,
+    hasAny: paidPartnership || madeWithAi,
+  };
+}
+
+function addXContentDisclosures(posts, disclosures) {
+  if (!disclosures.hasAny) return posts;
+  return posts.map(post => {
+    const updated = { ...post };
+    if (disclosures.paidPartnership) {
+      updated.paid_partnership = true;
+    }
+    if (disclosures.madeWithAi) {
+      updated.made_with_ai = true;
+    }
+    return updated;
+  });
+}
+
+function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
+  if ((quotePostUrl || disclosures.hasAny) && !platformList.includes('x')) {
+    if (quotePostUrl) {
+      error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
+    }
+    error('--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.');
+  }
+}
+
 function parseCsvArg(value, flagName) {
   // parseArgs sets missing values to true (e.g. `--tags --other-flag`)
   if (value === true) {
@@ -450,6 +484,34 @@ function getRequiredStringArgFromParsed(parsed, key, aliases = []) {
   }
 
   return String(value);
+}
+
+function getOptionalStringArgFromParsed(parsed, key, aliases = []) {
+  const candidates = [key, ...aliases];
+
+  for (const candidate of candidates) {
+    if (!Object.prototype.hasOwnProperty.call(parsed, candidate)) continue;
+
+    const value = parsed[candidate];
+    const preferred = `--${key}`;
+    const aliasText = aliases.length > 0
+      ? ` (or ${aliases.map(a => `--${a}`).join(', ')})`
+      : '';
+
+    if (value === true) {
+      error(`${preferred}${aliasText} requires a value`);
+    }
+    if (typeof value !== 'string') {
+      error(`${preferred}${aliasText} must be a string`);
+    }
+    if (value.trim() === '') {
+      error(`${preferred}${aliasText} requires a non-empty value`);
+    }
+
+    return String(value);
+  }
+
+  return null;
 }
 
 function resolveSocialSetIdFromParsed(parsed, positionalId) {
@@ -579,6 +641,32 @@ async function cmdAnalyticsPostsList(args) {
   if (includeReplies) params.set('include_replies', 'true');
 
   const data = await apiRequest('GET', `/social-sets/${socialSetId}/analytics/${platform}/posts?${params}`);
+  output(data);
+}
+
+async function cmdAnalyticsFollowersGet(args) {
+  const parsed = parseArgs(args);
+  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
+  const platform = (parsed.platform
+    ? coerceFlagValueToString(parsed.platform, '--platform')
+    : 'x').toLowerCase();
+  const startDate = getOptionalStringArgFromParsed(parsed, 'start-date', ['start_date']);
+  const endDate = getOptionalStringArgFromParsed(parsed, 'end-date', ['end_date']);
+
+  if (platform !== 'x') {
+    error('Only X analytics are currently supported by the Typefully API', {
+      provided_platform: platform,
+      hint: 'Use --platform x or omit the flag',
+    });
+  }
+
+  const params = new URLSearchParams();
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  const query = params.toString();
+  const endpoint = `/social-sets/${socialSetId}/analytics/${platform}/followers${query ? `?${query}` : ''}`;
+
+  const data = await apiRequest('GET', endpoint);
   output(data);
 }
 
@@ -989,9 +1077,17 @@ async function getAllConnectedPlatforms(socialSetId) {
 }
 
 async function cmdDraftsCreate(args) {
-  const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
+  const parsed = parseArgs(args, {
+    share: 'boolean',
+    all: 'boolean',
+    'paid-partnership': 'boolean',
+    paid_partnership: 'boolean',
+    'made-with-ai': 'boolean',
+    made_with_ai: 'boolean',
+  });
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
+  const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1030,9 +1126,10 @@ async function cmdDraftsCreate(args) {
   }
 
   const platformList = platforms.split(',').map(p => p.trim());
-  if (quotePostUrl && !platformList.includes('x')) {
-    error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
-  }
+  validateXOnlyPostOptions(platformList, {
+    quotePostUrl,
+    disclosures: xContentDisclosures,
+  });
 
   // Split text into posts (thread support)
   const posts = splitThreadText(text);
@@ -1054,7 +1151,7 @@ async function cmdDraftsCreate(args) {
   const platformsObj = {};
   for (const platform of platformList) {
     const postsArray = platform === 'x'
-      ? addQuotePostUrl(basePostsArray, quotePostUrl)
+      ? addXContentDisclosures(addQuotePostUrl(basePostsArray, quotePostUrl), xContentDisclosures)
       : basePostsArray;
     const platformConfig = {
       enabled: true,
@@ -1103,9 +1200,18 @@ async function cmdDraftsCreate(args) {
 }
 
 async function cmdDraftsUpdate(args) {
-  const parsed = parseArgs(args, { append: 'boolean', share: 'boolean', 'use-default': 'boolean' });
+  const parsed = parseArgs(args, {
+    append: 'boolean',
+    share: 'boolean',
+    'use-default': 'boolean',
+    'paid-partnership': 'boolean',
+    paid_partnership: 'boolean',
+    'made-with-ai': 'boolean',
+    made_with_ai: 'boolean',
+  });
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
+  const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1118,13 +1224,16 @@ async function cmdDraftsUpdate(args) {
 
   const body = {};
 
-  const shouldUpdatePosts = Boolean(text || quotePostUrl);
+  const shouldUpdatePosts = Boolean(text || quotePostUrl || xContentDisclosures.hasAny);
   if (shouldUpdatePosts) {
     const explicitPlatformList = parsed.platform
       ? parsed.platform.split(',').map(p => p.trim())
       : null;
-    if (quotePostUrl && explicitPlatformList && !explicitPlatformList.includes('x')) {
-      error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
+    if (explicitPlatformList) {
+      validateXOnlyPostOptions(explicitPlatformList, {
+        quotePostUrl,
+        disclosures: xContentDisclosures,
+      });
     }
 
     // Parse media IDs
@@ -1154,9 +1263,10 @@ async function cmdDraftsUpdate(args) {
       }
     }
 
-    if (quotePostUrl && !platformList.includes('x')) {
-      error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
-    }
+    validateXOnlyPostOptions(platformList, {
+      quotePostUrl,
+      disclosures: xContentDisclosures,
+    });
 
     let postsArray;
 
@@ -1189,10 +1299,13 @@ async function cmdDraftsUpdate(args) {
         });
       }
     } else {
-      // Quote-only update: preserve existing X posts and add quote URL.
+      // X-only metadata update: preserve existing X posts and add quote/disclosure attrs.
       const existingXPosts = existing.platforms?.x?.posts;
       if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
-        error('Cannot apply --quote-post-url because this draft has no existing X posts');
+        if (quotePostUrl && !xContentDisclosures.hasAny) {
+          error('Cannot apply --quote-post-url because this draft has no existing X posts');
+        }
+        error('Cannot apply X-only post options because this draft has no existing X posts');
       }
       postsArray = existingXPosts;
       platformList = ['x'];
@@ -1202,7 +1315,7 @@ async function cmdDraftsUpdate(args) {
     const platformsObj = {};
     for (const p of platformList) {
       const platformPosts = p === 'x'
-        ? addQuotePostUrl(postsArray, quotePostUrl)
+        ? addXContentDisclosures(addQuotePostUrl(postsArray, quotePostUrl), xContentDisclosures)
         : postsArray;
       platformsObj[p] = {
         enabled: true,
@@ -1233,7 +1346,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, or --quote-post-url is required');
+    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, or --made-with-ai is required');
   }
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, body);
@@ -1245,7 +1358,14 @@ async function cmdDraftsUpdate(args) {
 // ---------------------------------------------------------------------------
 
 async function cmdCreateDraftAlias(args) {
-  const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
+  const parsed = parseArgs(args, {
+    share: 'boolean',
+    all: 'boolean',
+    'paid-partnership': 'boolean',
+    paid_partnership: 'boolean',
+    'made-with-ai': 'boolean',
+    made_with_ai: 'boolean',
+  });
   const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
 
   const forwarded = [String(socialSetId)];
@@ -1276,6 +1396,8 @@ async function cmdCreateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'community', '--community');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
+  if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
+  if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1283,7 +1405,14 @@ async function cmdCreateDraftAlias(args) {
 }
 
 async function cmdUpdateDraftAlias(args) {
-  const parsed = parseArgs(args, { append: 'boolean', share: 'boolean' });
+  const parsed = parseArgs(args, {
+    append: 'boolean',
+    share: 'boolean',
+    'paid-partnership': 'boolean',
+    paid_partnership: 'boolean',
+    'made-with-ai': 'boolean',
+    made_with_ai: 'boolean',
+  });
   const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
 
   if (parsed._positional.length === 0) {
@@ -1313,6 +1442,8 @@ async function cmdUpdateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
+  if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
+  if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1585,6 +1716,13 @@ COMMANDS:
     --include-replies, --include_replies     Include X replies in results (excluded by default)
     --limit <n>                              Max results per page (default: 25, max: 100)
     --offset <n>                             Number of results to skip (default: 0)
+  analytics:followers:get [social_set_id] [options]
+                                             Get daily X follower counts (uses default if ID omitted)
+    --platform <platform>                    Platform to query (default: x; currently only x is supported)
+    --start-date <YYYY-MM-DD>                Inclusive start date (optional; default is last 30 days)
+                                             Also accepts: --start_date
+    --end-date <YYYY-MM-DD>                  Inclusive end date (optional; default is today)
+                                             Also accepts: --end_date
 
   drafts:list [social_set_id] [options]      List drafts (uses default if ID omitted)
     --status <status>                        Filter by: draft, scheduled, published, error, publishing
@@ -1609,6 +1747,8 @@ COMMANDS:
     --reply-to <url>                         URL of X post to reply to
     --community <id>                         X community ID to post to
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --paid-partnership, --paid_partnership   Label X posts as paid partnership
+    --made-with-ai, --made_with_ai           Label X posts as made with AI
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
@@ -1623,6 +1763,8 @@ COMMANDS:
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
     --tags <tag_slugs>                       Comma-separated tag slugs
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --paid-partnership, --paid_partnership   Label X posts as paid partnership
+    --made-with-ai, --made_with_ai           Label X posts as made with AI
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --use-default                            Required when using default social set with single arg
@@ -1699,6 +1841,12 @@ EXAMPLES:
   # Include replies in X analytics results
   ./typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07 --include-replies
 
+  # Fetch X followers analytics for the default last 30 days
+  ./typefully.js analytics:followers:get 123
+
+  # Fetch X followers analytics for a date range
+  ./typefully.js analytics:followers:get 123 --start-date 2026-03-01 --end-date 2026-03-31
+
   # Use resolved mention syntax in a LinkedIn draft
   ./typefully.js drafts:create 123 --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
 
@@ -1759,6 +1907,9 @@ EXAMPLES:
   # Create a quote post on X
   ./typefully.js drafts:create 123 --platform x --text "My take on this" --quote-post-url "https://x.com/user/status/1234567890123456789"
 
+  # Create an X post with content disclosure labels
+  ./typefully.js drafts:create 123 --platform x --text "Sponsored AI-assisted update" --paid-partnership --made-with-ai
+
   # Update an X draft to quote a post
   ./typefully.js drafts:update 123 456 --platform x --text "Updated take" --quote-post-url "https://x.com/user/status/1234567890123456789"
 
@@ -1791,6 +1942,7 @@ const COMMANDS = {
   'social-sets:get': cmdSocialSetsGet,
   'linkedin:organizations:resolve': cmdLinkedInOrganizationsResolve,
   'analytics:posts:list': cmdAnalyticsPostsList,
+  'analytics:followers:get': cmdAnalyticsFollowersGet,
   'drafts:list': cmdDraftsList,
   'drafts:get': cmdDraftsGet,
   'drafts:create': cmdDraftsCreate,
