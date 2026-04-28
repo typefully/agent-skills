@@ -314,7 +314,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, or --quote-post-url is required',
+      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, or --linkedin-reshare-target is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -562,6 +562,78 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:create supports plain LinkedIn reshares without commentary', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const reshareTarget = 'urn:li:share:7437089188157554688';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: '', linkedin_reshare_target: reshareTarget }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--linkedin-reshare-target', reshareTarget],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create applies LinkedIn reshare targets only to LinkedIn posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const reshareTarget = 'urn:li:ugcPost:7346543409643380737';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: 'Worth reading' }],
+          },
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'Worth reading', linkedin_reshare_target: reshareTarget }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x,linkedin', '--text', 'Worth reading', '--repost-url', reshareTarget],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create errors when LinkedIn reshare is used without LinkedIn platform', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Hello', '--linkedin-reshare-target', 'urn:li:share:123'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--linkedin-reshare-target is only supported for LinkedIn posts. Include linkedin in --platform or remove the reshare flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
   it('drafts:create errors when quote URL is used without X platform', withCliHarness(async ({
     sandbox, server 
   }) => {
@@ -642,7 +714,7 @@ describe('drafts', () => {
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
     );
     assert.equal(result.code, 1);
-    assert.deepEqual(parseJsonOrNull(result.stdout), { error: '--text or --file is required' });
+    assert.deepEqual(parseJsonOrNull(result.stdout), { error: '--text, --file, or --linkedin-reshare-target is required' });
   }));
 
   it('drafts:update supports title/schedule/share/notes without fetching existing draft', withCliHarness(async ({
@@ -956,6 +1028,57 @@ describe('drafts', () => {
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update can set a LinkedIn reshare target without changing text', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const reshareTarget = 'urn:li:groupPost:7346543409643380738';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        linkedin: { enabled: true, posts: [{ text: 'Existing LinkedIn text', media_ids: [] }] },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'Existing LinkedIn text', media_ids: [], linkedin_reshare_target: reshareTarget }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--linkedin-reshare-url', reshareTarget],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update errors when LinkedIn reshare is used without LinkedIn platform', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'x', '--text', 'Hello', '--linkedin-reshare-target', 'urn:li:share:123'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--linkedin-reshare-target is only supported for LinkedIn posts. Include linkedin in --platform or remove the reshare flag.',
+    });
+    assert.equal(server.requests.length, 0);
   }));
 
   it('drafts:update errors when quote URL is used without X platform', withCliHarness(async ({

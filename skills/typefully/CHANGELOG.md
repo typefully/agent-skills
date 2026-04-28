@@ -8,6 +8,9 @@ The format is based on Keep a Changelog.
 
 ### Added
 
+- `drafts:create` and `drafts:update` now support LinkedIn reshares/reposts with `--linkedin-reshare-target <url_or_urn>`.
+- LinkedIn reshare aliases: `--linkedin_reshare_target`, `--linkedin-reshare-url`, `--linkedin-repost-url`, `--reshare-url`, and `--repost-url`.
+- Skill docs now explain LinkedIn reshare/repost workflows, including plain reshares without commentary.
 - `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
 
 ### Changed

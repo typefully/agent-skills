@@ -389,6 +389,53 @@ function addQuotePostUrl(posts, quotePostUrl) {
   return posts.map(post => ({ ...post, quote_post_url: quotePostUrl }));
 }
 
+function getLinkedInReshareTargetFromParsed(parsed) {
+  const keys = [
+    'linkedin-reshare-target',
+    'linkedin_reshare_target',
+    'linkedin-reshare-url',
+    'linkedin_reshare_url',
+    'linkedin-repost-url',
+    'linkedin_repost_url',
+    'reshare-url',
+    'reshare_url',
+    'repost-url',
+    'repost_url',
+  ];
+  const values = [];
+
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+    values.push({
+      key,
+      value: coerceFlagValueToString(parsed[key], `--${key}`),
+    });
+  }
+
+  if (values.length === 0) return null;
+
+  const first = values[0].value;
+  const conflicting = values.find(item => item.value !== first);
+  if (conflicting) {
+    error('Conflicting LinkedIn reshare target values', Object.fromEntries(values.map(item => [`--${item.key}`, item.value])));
+  }
+
+  return first;
+}
+
+function addLinkedInReshareTarget(posts, linkedinReshareTarget) {
+  if (!linkedinReshareTarget) return posts;
+  return posts.map(post => ({ ...post, linkedin_reshare_target: linkedinReshareTarget }));
+}
+
+function splitDraftText(text, { allowEmpty = false } = {}) {
+  const posts = splitThreadText(text || '');
+  if (posts.length === 0 && allowEmpty) {
+    return [''];
+  }
+  return posts;
+}
+
 function parseCsvArg(value, flagName) {
   // parseArgs sets missing values to true (e.g. `--tags --other-flag`)
   if (value === true) {
@@ -992,6 +1039,7 @@ async function cmdDraftsCreate(args) {
   const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
+  const linkedinReshareTarget = getLinkedInReshareTargetFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1002,8 +1050,8 @@ async function cmdDraftsCreate(args) {
     text = fs.readFileSync(parsed.file, 'utf-8');
   }
 
-  if (!text) {
-    error('--text or --file is required');
+  if (!text && !linkedinReshareTarget) {
+    error('--text, --file, or --linkedin-reshare-target is required');
   }
 
   // Determine platform(s)
@@ -1020,6 +1068,8 @@ async function cmdDraftsCreate(args) {
       error('No connected platforms found. Connect a platform at typefully.com');
     }
     platforms = allPlatforms.join(',');
+  } else if (!platforms && linkedinReshareTarget) {
+    platforms = 'linkedin';
   } else if (!platforms) {
     // Smart default: get first connected platform
     const defaultPlatform = await getFirstConnectedPlatform(socialSetId);
@@ -1033,9 +1083,15 @@ async function cmdDraftsCreate(args) {
   if (quotePostUrl && !platformList.includes('x')) {
     error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
   }
+  if (linkedinReshareTarget && !platformList.includes('linkedin')) {
+    error('--linkedin-reshare-target is only supported for LinkedIn posts. Include linkedin in --platform or remove the reshare flag.');
+  }
+  if (linkedinReshareTarget && !text && platformList.some(platform => platform !== 'linkedin')) {
+    error('A text value is required when creating non-LinkedIn posts alongside a LinkedIn reshare.');
+  }
 
   // Split text into posts (thread support)
-  const posts = splitThreadText(text);
+  const posts = splitDraftText(text, { allowEmpty: Boolean(linkedinReshareTarget) });
 
   // Parse media IDs
   const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
@@ -1053,9 +1109,13 @@ async function cmdDraftsCreate(args) {
   // Build platforms object
   const platformsObj = {};
   for (const platform of platformList) {
-    const postsArray = platform === 'x'
-      ? addQuotePostUrl(basePostsArray, quotePostUrl)
-      : basePostsArray;
+    let postsArray = basePostsArray;
+    if (platform === 'x') {
+      postsArray = addQuotePostUrl(postsArray, quotePostUrl);
+    }
+    if (platform === 'linkedin') {
+      postsArray = addLinkedInReshareTarget(postsArray, linkedinReshareTarget);
+    }
     const platformConfig = {
       enabled: true,
       posts: postsArray,
@@ -1106,6 +1166,7 @@ async function cmdDraftsUpdate(args) {
   const parsed = parseArgs(args, { append: 'boolean', share: 'boolean', 'use-default': 'boolean' });
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
+  const linkedinReshareTarget = getLinkedInReshareTargetFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1118,13 +1179,16 @@ async function cmdDraftsUpdate(args) {
 
   const body = {};
 
-  const shouldUpdatePosts = Boolean(text || quotePostUrl);
+  const shouldUpdatePosts = Boolean(text || quotePostUrl || linkedinReshareTarget);
   if (shouldUpdatePosts) {
     const explicitPlatformList = parsed.platform
       ? parsed.platform.split(',').map(p => p.trim())
       : null;
     if (quotePostUrl && explicitPlatformList && !explicitPlatformList.includes('x')) {
       error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
+    }
+    if (linkedinReshareTarget && explicitPlatformList && !explicitPlatformList.includes('linkedin')) {
+      error('--linkedin-reshare-target is only supported for LinkedIn posts. Include linkedin in --platform or remove the reshare flag.');
     }
 
     // Parse media IDs
@@ -1157,6 +1221,9 @@ async function cmdDraftsUpdate(args) {
     if (quotePostUrl && !platformList.includes('x')) {
       error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
     }
+    if (linkedinReshareTarget && !platformList.includes('linkedin')) {
+      error('--linkedin-reshare-target is only supported for LinkedIn posts. Include linkedin in --platform or remove the reshare flag.');
+    }
 
     let postsArray;
 
@@ -1179,7 +1246,7 @@ async function cmdDraftsUpdate(args) {
         postsArray = [...existingPosts, newPost];
       } else {
         // Replace with new posts
-        const posts = splitThreadText(text);
+        const posts = splitDraftText(text);
         postsArray = posts.map((postText, index) => {
           const post = { text: postText };
           if (index === 0 && mediaIds.length > 0) {
@@ -1188,7 +1255,7 @@ async function cmdDraftsUpdate(args) {
           return post;
         });
       }
-    } else {
+    } else if (quotePostUrl) {
       // Quote-only update: preserve existing X posts and add quote URL.
       const existingXPosts = existing.platforms?.x?.posts;
       if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
@@ -1196,14 +1263,27 @@ async function cmdDraftsUpdate(args) {
       }
       postsArray = existingXPosts;
       platformList = ['x'];
+    } else {
+      // Reshare-only update: preserve existing LinkedIn posts and add the reshare target.
+      const existingLinkedInPosts = existing.platforms?.linkedin?.posts;
+      if (!Array.isArray(existingLinkedInPosts) || existingLinkedInPosts.length === 0) {
+        postsArray = [{ text: '' }];
+      } else {
+        postsArray = existingLinkedInPosts;
+      }
+      platformList = ['linkedin'];
     }
 
     // Build platforms object
     const platformsObj = {};
     for (const p of platformList) {
-      const platformPosts = p === 'x'
-        ? addQuotePostUrl(postsArray, quotePostUrl)
-        : postsArray;
+      let platformPosts = postsArray;
+      if (p === 'x') {
+        platformPosts = addQuotePostUrl(platformPosts, quotePostUrl);
+      }
+      if (p === 'linkedin') {
+        platformPosts = addLinkedInReshareTarget(platformPosts, linkedinReshareTarget);
+      }
       platformsObj[p] = {
         enabled: true,
         posts: platformPosts,
@@ -1233,7 +1313,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, or --quote-post-url is required');
+    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, or --linkedin-reshare-target is required');
   }
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, body);
@@ -1247,6 +1327,7 @@ async function cmdDraftsUpdate(args) {
 async function cmdCreateDraftAlias(args) {
   const parsed = parseArgs(args, { share: 'boolean', all: 'boolean' });
   const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+  const linkedinReshareTarget = getLinkedInReshareTargetFromParsed(parsed);
 
   const forwarded = [String(socialSetId)];
 
@@ -1258,12 +1339,14 @@ async function cmdCreateDraftAlias(args) {
     if (Object.prototype.hasOwnProperty.call(parsed, 'text')) {
       text = coerceFlagValueToString(parsed.text, '--text');
     } else {
-      if (parsed._positional.length === 0) {
+      if (parsed._positional.length === 0 && !linkedinReshareTarget) {
         error('Draft text is required (provide it as the first argument, or use --text/--file)');
       }
       text = parsed._positional.join(' ');
     }
-    forwarded.push('--text', text);
+    if (text || !linkedinReshareTarget) {
+      forwarded.push('--text', text);
+    }
   }
 
   pushStringFlag(forwarded, parsed, 'platform', '--platform');
@@ -1276,6 +1359,7 @@ async function cmdCreateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'community', '--community');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
+  if (linkedinReshareTarget) forwarded.push('--linkedin-reshare-target', linkedinReshareTarget);
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1313,6 +1397,8 @@ async function cmdUpdateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
+  const linkedinReshareTarget = getLinkedInReshareTargetFromParsed(parsed);
+  if (linkedinReshareTarget) forwarded.push('--linkedin-reshare-target', linkedinReshareTarget);
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1609,6 +1695,10 @@ COMMANDS:
     --reply-to <url>                         URL of X post to reply to
     --community <id>                         X community ID to post to
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --linkedin-reshare-target <url_or_urn>   Reshare/repost a LinkedIn post (LinkedIn only)
+                                             Also accepts: --linkedin_reshare_target,
+                                             --linkedin-reshare-url, --linkedin-repost-url,
+                                             --reshare-url, --repost-url
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
@@ -1623,6 +1713,10 @@ COMMANDS:
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
     --tags <tag_slugs>                       Comma-separated tag slugs
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --linkedin-reshare-target <url_or_urn>   Reshare/repost a LinkedIn post (LinkedIn only)
+                                             Also accepts: --linkedin_reshare_target,
+                                             --linkedin-reshare-url, --linkedin-repost-url,
+                                             --reshare-url, --repost-url
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --use-default                            Required when using default social set with single arg
@@ -1761,6 +1855,15 @@ EXAMPLES:
 
   # Update an X draft to quote a post
   ./typefully.js drafts:update 123 456 --platform x --text "Updated take" --quote-post-url "https://x.com/user/status/1234567890123456789"
+
+  # Create a LinkedIn reshare/repost with commentary
+  ./typefully.js drafts:create 123 --platform linkedin --text "Worth reading" --linkedin-reshare-target "https://www.linkedin.com/posts/typefullycom_linkedin-mentions-just-got-a-lot-better-in-activity-7437089188157554688-wSxN"
+
+  # Create a plain LinkedIn reshare/repost with no commentary
+  ./typefully.js drafts:create 123 --platform linkedin --linkedin-reshare-target "urn:li:share:7437089188157554688"
+
+  # Update a LinkedIn draft to reshare/repost an existing post
+  ./typefully.js drafts:update 123 456 --platform linkedin --linkedin-reshare-target "urn:li:ugcPost:7346543409643380737"
 
   # Create draft with share URL
   ./typefully.js drafts:create 123 --platform x --text "Check this out" --share

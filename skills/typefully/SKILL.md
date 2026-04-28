@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-03-17
+last-updated: 2026-04-28
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -110,6 +110,7 @@ When determining which social set to use:
 | "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
 | "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
 | "Mention a company on LinkedIn" | `linkedin:organizations:resolve --organization-url "<linkedin_url>"` then use returned `mention_text` in `drafts:create` |
+| "Reshare/repost this LinkedIn post" | `drafts:create --platform linkedin --linkedin-reshare-target "<linkedin_url_or_urn>"` |
 | "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
 | "X thread + LinkedIn post" (different content) | Create one draft, then `drafts:update` to add platform (see [Publishing to Multiple Platforms](#publishing-to-multiple-platforms)) |
 | "What's scheduled?" | `drafts:list --status scheduled` |
@@ -225,6 +226,27 @@ Then include that `mention_text` in your LinkedIn draft text:
 ./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
 ```
 
+## LinkedIn Reshares/Reposts
+
+LinkedIn reshares are supported by adding a LinkedIn post URL or canonical parent URN to the LinkedIn post payload:
+
+```bash
+# Reshare/repost a LinkedIn post with commentary
+./scripts/typefully.js drafts:create --platform linkedin --text "Worth reading" --linkedin-reshare-target "https://www.linkedin.com/posts/typefullycom_linkedin-mentions-just-got-a-lot-better-in-activity-7437089188157554688-wSxN"
+
+# Plain reshare/repost with no commentary
+./scripts/typefully.js drafts:create --platform linkedin --linkedin-reshare-target "urn:li:share:7437089188157554688"
+```
+
+The API also accepts `urn:li:ugcPost:<id>` and `urn:li:groupPost:<id>` values. The CLI sends this as `linkedin_reshare_target`; draft responses return the canonical `linkedin_reshare_urn`.
+
+Useful aliases:
+- `--linkedin_reshare_target`
+- `--linkedin-reshare-url`
+- `--linkedin-repost-url`
+- `--reshare-url`
+- `--repost-url`
+
 ## Commands Reference
 
 ### User & Social Sets
@@ -274,10 +296,12 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 | `drafts:create ... --reply-to <url>` | Reply to an existing X post |
 | `drafts:create ... --community <id>` | Post to an X community |
 | `drafts:create ... --quote-post-url <url>` | Quote an existing X post URL |
+| `drafts:create ... --linkedin-reshare-target <url_or_urn>` | Reshare/repost an existing LinkedIn post |
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
 | `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
 | `drafts:update ... --quote-post-url <url>` | Update X post(s) in a draft to quote an existing post URL |
+| `drafts:update ... --linkedin-reshare-target <url_or_urn>` | Update LinkedIn post(s) in a draft to reshare/repost an existing LinkedIn post |
 | `drafts:update [social_set_id] <draft_id> --tags "tag1,tag2"` | Update tags on an existing draft (content unchanged) |
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
@@ -377,6 +401,21 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ### Create a LinkedIn draft with a mention
 ```bash
 ./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
+```
+
+### Create a LinkedIn reshare/repost
+```bash
+./scripts/typefully.js drafts:create --platform linkedin --text "Worth reading" --linkedin-reshare-target "https://www.linkedin.com/posts/typefullycom_linkedin-mentions-just-got-a-lot-better-in-activity-7437089188157554688-wSxN"
+```
+
+### Create a plain LinkedIn reshare/repost
+```bash
+./scripts/typefully.js drafts:create --platform linkedin --linkedin-reshare-target "urn:li:share:7437089188157554688"
+```
+
+### Update a LinkedIn draft to reshare/repost a post
+```bash
+./scripts/typefully.js drafts:update 456 --platform linkedin --linkedin-reshare-target "urn:li:ugcPost:7346543409643380737" --use-default
 ```
 
 ### Create a post on all connected platforms
