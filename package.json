@@ -2,6 +2,7 @@
   "name": "agent-skills",
   "private": true,
   "type": "commonjs",
+  "packageManager": "npm@11.13.0",
   "scripts": {
     "test": "vitest run",
     "test:drafts": "vitest run tests/drafts.test.js",
@@ -14,6 +15,10 @@
     "test:me": "vitest run tests/me.test.js",
     "test:common": "vitest run tests/common.test.js",
     "test:all": "vitest run tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=11.0.0"
   },
   "devDependencies": {
     "execa": "^9.6.1",
