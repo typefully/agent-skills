@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [20.x, 22.x]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,8 +22,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Use npm 11
+        run: npm install -g npm@11.13.0
+
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run Tests
         run: npm test
