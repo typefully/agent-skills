@@ -8,6 +8,16 @@ The format is based on Keep a Changelog.
 
 ### Added
 
+- Per-draft comment-thread CRUD:
+  - `comments:list <draft_id>` — list threads with `--platform`, `--status` (`unresolved` / `resolved` / `all`), `--limit`, `--offset` filters.
+  - `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` — create a thread anchored on a span. Optional `--platform`, `--occurrence`.
+  - `comments:reply <draft_id> <thread_id> --text "..."` — append a comment to an existing thread.
+  - `comments:resolve <draft_id> <thread_id>` — resolve a thread (also strips its markers from the post text).
+  - `comments:update <draft_id> <thread_id> <comment_id> --text "..."` — edit a comment's text (comment-author only).
+  - `comments:delete <draft_id> <thread_id> [comment_id]` — delete the whole thread, or a single comment within it.
+- `--exclude-comment-markers` (alias: `--exclude_comment_markers`) on `drafts:get` and `drafts:update` to render `posts[*].text` without inline `<typ:comment-thread>` markers (read-only / display use; round-trip back to `drafts:update` will lose comment anchors).
+- `--force-overwrite-comments` (alias: `--force_overwrite_comments`) on `drafts:update` to accept submitted text whose markers don't cover every stored comment thread; missing threads are resolved server-side and their anchors stripped.
+- SKILL docs cover the comment-thread workflow, marker round-trip rules, and when to use the new flags.
 - `analytics:followers:get [social_set_id]` to fetch X follower analytics, with optional `--start-date` / `--end-date` date filters and snake_case aliases.
 - `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
 - `--paid-partnership` / `--paid_partnership` and `--made-with-ai` / `--made_with_ai` for X draft create/update disclosure flags.

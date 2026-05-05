@@ -314,7 +314,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, or --made-with-ai is required',
+      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -1092,7 +1092,7 @@ describe('drafts', () => {
   }));
 
   it('global flag: drafts:create accepts --social-set-id (kebab-case) with no positional social set', withCliHarness(async ({
-    sandbox, server, baseUrl, apiKey 
+    sandbox, server, baseUrl, apiKey
   }) => {
   server.expect('POST', '/v2/social-sets/9/drafts', {
     assert: (req) => {
@@ -1107,6 +1107,97 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 0);
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:get with --exclude-comment-markers adds exclude_comment_markers query param', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey,
+  }) => {
+    server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.equal(req.search, '?exclude_comment_markers=true');
+      },
+      json: { id: 'd1', platforms: { x: { posts: [{ text: 'plain text' }] } } },
+    });
+    const result = await runCli(
+      ['drafts:get', '9', 'd1', '--exclude-comment-markers'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      id: 'd1',
+      platforms: { x: { posts: [{ text: 'plain text' }] } },
+    });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update with only --force-overwrite-comments sends PATCH without fetching existing draft', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey,
+  }) => {
+    server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.equal(req.search, '');
+        assert.deepEqual(req.bodyJson, { force_overwrite_comments: true });
+      },
+      json: { id: 'd1', ok: true },
+    });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--force-overwrite-comments'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    assert.equal(server.requests.length, 1);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update combines --text with --force-overwrite-comments in body', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey,
+  }) => {
+    server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+      assert: authAssertFactory(apiKey),
+      json: { id: 'd1', platforms: { x: { enabled: true, posts: [{ text: 'Old' }] } } },
+    });
+    server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.deepEqual(req.bodyJson, {
+          platforms: {
+            x: { enabled: true, posts: [{ text: 'Rewritten body' }] },
+          },
+          force_overwrite_comments: true,
+        });
+      },
+      json: { id: 'd1', ok: true },
+    });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--text', 'Rewritten body', '--force-overwrite-comments'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update with --exclude-comment-markers adds query string to PATCH URL', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey,
+  }) => {
+    server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.equal(req.search, '?exclude_comment_markers=true');
+        assert.deepEqual(req.bodyJson, { force_overwrite_comments: true });
+      },
+      json: { id: 'd1', ok: true },
+    });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--force-overwrite-comments', '--exclude-comment-markers'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
     server.assertNoPendingExpectations();
   }));
 });
