@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-04-24
+last-updated: 2026-05-05
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -123,6 +123,11 @@ When determining which social set to use:
 | "Show my X post analytics including replies" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --include-replies` |
 | "Show my X follower growth" | `analytics:followers:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 | "Show my queue for next week" | `queue:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
+| "List comments on this draft" | `comments:list <draft_id>` |
+| "Comment on the phrase 'exciting news'" | `comments:create <draft_id> --post-index 0 --selected-text "exciting news" --text "..."` |
+| "Reply to that comment thread" | `comments:reply <draft_id> <thread_id> --text "..."` |
+| "Resolve / delete a comment thread" | `comments:resolve <draft_id> <thread_id>` / `comments:delete <draft_id> <thread_id>` |
+| "Get the draft without comment annotations" | `drafts:get <draft_id> --exclude-comment-markers` |
 
 ## Workflow
 
@@ -227,6 +232,39 @@ Then include that `mention_text` in your LinkedIn draft text:
 ./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
 ```
 
+## Comments on Drafts
+
+Drafts can have comment threads anchored to a selected span or to a whole paragraph. `drafts:get` returns `posts[*].text` with inline `<typ:comment-thread>` anchors by default so agents can preserve those anchors during edits.
+
+**Core rules for agents:**
+
+1. **Preserve every comment anchor when patching draft text.** Span anchors wrap selected text; self-closing anchors at the start of a paragraph are live comments on the whole following paragraph, not empty/resolved comments. When rewriting, move each anchor to the most semantically equivalent span or paragraph. Do not silently strip or drop anchors.
+2. **Do not resolve or delete comments without explicit user instruction.** After editing text that may address feedback, ask whether to resolve the specific thread(s). Never infer that "clean up", "tidy", or "looks addressed" means resolve/delete.
+3. **Talk to users about comments, not marker syntax.** Describe anchors in plain English, such as "comment on the word 'constraint'" or "comment on the paragraph starting with ...". Only mention marker syntax when explaining marker-related API errors or when the user asks how anchors work.
+
+Default edit flow for drafts with comments: get the draft with anchors enabled, rewrite while preserving/repositioning every anchor, patch with `drafts:update --text ...` without force flags, then ask whether to resolve any addressed comments. Use `comments:list <draft_id> --status all` when you need thread ids, comment bodies, authors, or resolved status.
+
+Use `drafts:get --exclude-comment-markers` only for display, LLM context, export, or preview text that will not be patched back.
+
+### Force Overwrite And Accepting Comments
+
+`--force-overwrite-comments` is destructive: every unresolved thread whose anchor is missing from the submitted text is resolved server-side and stripped, including unrelated threads. Default: do not use it. If a PATCH fails because anchors do not match, fetch the draft with anchors, preserve every `<typ:comment-thread>` anchor, and patch again without force.
+
+Only use `--force-overwrite-comments` when anchors truly cannot be preserved, such as a user-requested wholesale rewrite or an anchor with no reasonable new location. Before using it, run `comments:list <draft_id> --status unresolved`, tell the user which threads will be resolved and stripped (selected text + top comment), state that this cannot be undone via the API, and wait for an explicit "yes, proceed". Do not confirm and PATCH in the same turn.
+
+When the user asks to accept/apply/address a comment, fetch without `--exclude-comment-markers`, identify the target thread, edit only that anchor's text (or the paragraph after a self-closing paragraph anchor), preserve every other anchor and unrelated text, then `drafts:update` without force flags. Ask before resolving the thread. If feedback is open-ended, propose wording or ask instead of inventing silently. For "accept all comments", batch only changes whose anchors can all be preserved.
+
+| Command | Purpose |
+|---------|---------|
+| `comments:list <draft_id>` | List comment threads. Filters: `--platform`, `--status` (`unresolved` default / `resolved` / `all`), `--limit`, `--offset` |
+| `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` | Create a comment thread anchored on exact selected text. Optional: `--platform`, `--occurrence` |
+| `comments:reply <draft_id> <thread_id> --text "..."` | Add a reply to a thread |
+| `comments:resolve <draft_id> <thread_id>` | Resolve a thread, only after explicit user confirmation |
+| `comments:update <draft_id> <thread_id> <comment_id> --text "..."` | Edit a comment's text; comment-author only |
+| `comments:delete <draft_id> <thread_id> [comment_id]` | Delete a thread or one comment, only after explicit user instruction |
+
+`comments:create` requires `selected_text` to exactly match the post text. If it repeats, pass zero-based `--occurrence`; for LinkedIn mentions, select the entire `@[Name](urn:li:...)` substring or stay outside it. Pass `--platform` only when the draft has multiple commentable platforms.
+
 ## Commands Reference
 
 ### User & Social Sets
@@ -277,10 +315,13 @@ Follower analytics returns `current_followers_count` plus daily `data` points wi
 All drafts commands support an optional `[social_set_id]` - if omitted, the configured default is used.
 **Safety note**: For commands that take `[social_set_id] <draft_id>`, if you pass only a single argument (the draft_id) while a default social set is configured, you must add `--use-default` to confirm intent.
 
+When updating a draft that has comments, preserve anchors from `drafts:get` in the text sent to `drafts:update`. `--exclude-comment-markers` is display-only. `--force-overwrite-comments` is a destructive last resort that requires explicit user confirmation; see [Comments on Drafts](#comments-on-drafts).
+
 | Command | Description |
 |---------|-------------|
 | `drafts:list [social_set_id]` | List drafts (add `--status scheduled` to filter, `--sort` to order) |
 | `drafts:get [social_set_id] <draft_id>` | Get a specific draft with full content (single-arg requires `--use-default` if a default is configured) |
+| `drafts:get ... --exclude-comment-markers` | Render `posts[*].text` without comment anchors (read-only / display use only) |
 | `drafts:create [social_set_id] --text "..."` | Create a new draft (auto-selects platform) |
 | `drafts:create [social_set_id] --platform x --text "..."` | Create a draft for specific platform(s) |
 | `drafts:create [social_set_id] --all --text "..."` | Create a draft for all connected platforms |
@@ -301,6 +342,8 @@ All drafts commands support an optional `[social_set_id]` - if omitted, the conf
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
 | `drafts:update [social_set_id] <draft_id> --append --text "..."` | Append to existing thread |
+| `drafts:update ... --exclude-comment-markers` | Render the response without comment anchors (display only; request validation still applies) |
+| `drafts:update ... --force-overwrite-comments` | Destructive last resort; auto-resolves missing-anchor threads and requires explicit user confirmation first |
 
 ### Scheduling & Publishing
 

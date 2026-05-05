@@ -1037,10 +1037,23 @@ async function cmdDraftsList(args) {
 }
 
 async function cmdDraftsGet(args) {
-  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  const parsed = parseArgs(args, {
+    'use-default': 'boolean',
+    'exclude-comment-markers': 'boolean',
+    exclude_comment_markers: 'boolean',
+  });
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:get');
 
-  const data = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
+  const params = new URLSearchParams();
+  if (parsed['exclude-comment-markers'] || parsed.exclude_comment_markers) {
+    params.set('exclude_comment_markers', 'true');
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `/social-sets/${socialSetId}/drafts/${draftId}?${qs}`
+    : `/social-sets/${socialSetId}/drafts/${draftId}`;
+
+  const data = await apiRequest('GET', url);
   output(data);
 }
 
@@ -1208,6 +1221,10 @@ async function cmdDraftsUpdate(args) {
     paid_partnership: 'boolean',
     'made-with-ai': 'boolean',
     made_with_ai: 'boolean',
+    'exclude-comment-markers': 'boolean',
+    exclude_comment_markers: 'boolean',
+    'force-overwrite-comments': 'boolean',
+    force_overwrite_comments: 'boolean',
   });
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
@@ -1345,11 +1362,24 @@ async function cmdDraftsUpdate(args) {
     body.tags = parseCsvArg(parsed.tags, '--tags');
   }
 
-  if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, or --made-with-ai is required');
+  if (parsed['force-overwrite-comments'] || parsed.force_overwrite_comments) {
+    body.force_overwrite_comments = true;
   }
 
-  const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, body);
+  if (Object.keys(body).length === 0) {
+    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
+  }
+
+  const params = new URLSearchParams();
+  if (parsed['exclude-comment-markers'] || parsed.exclude_comment_markers) {
+    params.set('exclude_comment_markers', 'true');
+  }
+  const qs = params.toString();
+  const url = qs
+    ? `/social-sets/${socialSetId}/drafts/${draftId}?${qs}`
+    : `/social-sets/${socialSetId}/drafts/${draftId}`;
+
+  const data = await apiRequest('PATCH', url, body);
   output(data);
 }
 
@@ -1483,6 +1513,165 @@ async function cmdDraftsPublish(args) {
     publish_at: 'now',
   });
   output(data);
+}
+
+// ---------------------------------------------------------------------------
+// Comments (per-draft comment threads)
+// ---------------------------------------------------------------------------
+
+function requireDraftIdPositional(parsed, commandName) {
+  const positional = parsed._positional;
+  if (positional.length === 0) {
+    error(`draft_id is required`, {
+      hint: `Usage: typefully.js ${commandName} <draft_id> [--social-set-id <id>]`,
+    });
+  }
+  const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+  return { socialSetId, draftId: positional[0] };
+}
+
+function requireThreadPositional(parsed, commandName) {
+  const positional = parsed._positional;
+  if (positional.length < 2) {
+    error('draft_id and thread_id are required', {
+      hint: `Usage: typefully.js ${commandName} <draft_id> <thread_id> [--social-set-id <id>]`,
+    });
+  }
+  const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+  return { socialSetId, draftId: positional[0], threadId: positional[1] };
+}
+
+function requireCommentPositional(parsed, commandName) {
+  const positional = parsed._positional;
+  if (positional.length < 3) {
+    error('draft_id, thread_id, and comment_id are required', {
+      hint: `Usage: typefully.js ${commandName} <draft_id> <thread_id> <comment_id> [--social-set-id <id>]`,
+    });
+  }
+  const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+  return {
+    socialSetId,
+    draftId: positional[0],
+    threadId: positional[1],
+    commentId: positional[2],
+  };
+}
+
+async function cmdCommentsList(args) {
+  const parsed = parseArgs(args);
+  const { socialSetId, draftId } = requireDraftIdPositional(parsed, 'comments:list');
+
+  const params = new URLSearchParams();
+  if (parsed.platform) params.set('platform', parsed.platform);
+  if (parsed.status) params.set('status', parsed.status);
+  params.set('limit', parsed.limit || '10');
+  if (parsed.offset) params.set('offset', parsed.offset);
+
+  const data = await apiRequest(
+    'GET',
+    `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads?${params}`,
+  );
+  output(data);
+}
+
+async function cmdCommentsCreate(args) {
+  const parsed = parseArgs(args);
+  const { socialSetId, draftId } = requireDraftIdPositional(parsed, 'comments:create');
+
+  const text = getRequiredStringArgFromParsed(parsed, 'text');
+  const selectedText = getRequiredStringArgFromParsed(parsed, 'selected-text', ['selected_text']);
+  const postIndexRaw = getRequiredStringArgFromParsed(parsed, 'post-index', ['post_index']);
+  const postIndex = Number.parseInt(postIndexRaw, 10);
+  if (!Number.isInteger(postIndex) || postIndex < 0) {
+    error('--post-index must be a non-negative integer');
+  }
+
+  const body = {
+    post_index: postIndex,
+    selected_text: selectedText,
+    text,
+  };
+
+  if (parsed.platform) body.platform = parsed.platform;
+  if (Object.prototype.hasOwnProperty.call(parsed, 'occurrence')) {
+    const occurrence = Number.parseInt(parsed.occurrence, 10);
+    if (!Number.isInteger(occurrence) || occurrence < 0) {
+      error('--occurrence must be a non-negative integer');
+    }
+    body.occurrence = occurrence;
+  }
+
+  const data = await apiRequest(
+    'POST',
+    `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads`,
+    body,
+  );
+  output(data);
+}
+
+async function cmdCommentsReply(args) {
+  const parsed = parseArgs(args);
+  const { socialSetId, draftId, threadId } = requireThreadPositional(parsed, 'comments:reply');
+  const text = getRequiredStringArgFromParsed(parsed, 'text');
+
+  const data = await apiRequest(
+    'POST',
+    `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads/${threadId}/comments`,
+    { text },
+  );
+  output(data);
+}
+
+async function cmdCommentsResolve(args) {
+  const parsed = parseArgs(args);
+  const { socialSetId, draftId, threadId } = requireThreadPositional(parsed, 'comments:resolve');
+
+  const data = await apiRequest(
+    'POST',
+    `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads/${threadId}/resolve`,
+  );
+  output(data);
+}
+
+async function cmdCommentsUpdate(args) {
+  const parsed = parseArgs(args);
+  const { socialSetId, draftId, threadId, commentId } = requireCommentPositional(
+    parsed,
+    'comments:update',
+  );
+  const text = getRequiredStringArgFromParsed(parsed, 'text');
+
+  const data = await apiRequest(
+    'PATCH',
+    `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads/${threadId}/comments/${commentId}`,
+    { text },
+  );
+  output(data);
+}
+
+async function cmdCommentsDelete(args) {
+  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  const positional = parsed._positional;
+
+  if (positional.length < 2) {
+    error('draft_id and thread_id are required', {
+      hint: 'Usage: typefully.js comments:delete <draft_id> <thread_id> [comment_id] [--social-set-id <id>]',
+    });
+  }
+  const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
+  const draftId = positional[0];
+  const threadId = positional[1];
+  const commentId = positional[2] || null;
+
+  const url = commentId
+    ? `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads/${threadId}/comments/${commentId}`
+    : `/social-sets/${socialSetId}/drafts/${draftId}/comment-threads/${threadId}`;
+
+  await apiRequest('DELETE', url);
+  output({
+    success: true,
+    message: commentId ? 'Comment deleted' : 'Comment thread deleted',
+  });
 }
 
 async function cmdQueueGet(args) {
@@ -1732,6 +1921,10 @@ COMMANDS:
     --limit <n>                              Max results (default: 10, max: 50)
 
   drafts:get [social_set_id] <draft_id>      Get a specific draft
+    --exclude-comment-markers                Render posts[*].text as plain text without
+                                             <typ:comment-thread> markers (read-only display use).
+                                             Round-tripping the result back to PATCH will lose
+                                             comment anchors. Also accepts: --exclude_comment_markers
     --use-default                            Required when using default social set with single arg
 
   drafts:create [social_set_id] [options]    Create a new draft (uses default if ID omitted)
@@ -1767,6 +1960,14 @@ COMMANDS:
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
+    --exclude-comment-markers                Render response posts[*].text without
+                                             <typ:comment-thread> markers (display only).
+                                             Also accepts: --exclude_comment_markers
+    --force-overwrite-comments               Destructive last resort: resolves every thread whose
+                                             anchor is missing from submitted text, including
+                                             unrelated threads. Agents must list affected threads
+                                             and get explicit user confirmation before using it.
+                                             Also accepts: --force_overwrite_comments
     --use-default                            Required when using default social set with single arg
 
   create-draft <text> [options]             Alias for drafts:create (positional text + --social-set-id)
@@ -1789,6 +1990,38 @@ COMMANDS:
   queue:schedule:put [social_set_id] --rules <json_array>
                                             Replace queue schedule rules (uses default if ID omitted)
                                             Rule shape: [{"h":9,"m":30,"days":["mon","wed","fri"]}]
+
+  comments:list <draft_id> [options]         List comment threads on a draft
+    --social-set-id <id>                     Social set (uses default if omitted)
+    --platform <platform>                    Filter by platform: x, linkedin, threads, bluesky, mastodon
+    --status <status>                        Filter by: unresolved (default), resolved, all
+    --limit <n>                              Max results (default: 10, max: 50)
+    --offset <n>                             Skip first N results
+
+  comments:create <draft_id> [options]       Create a new comment thread anchored on a span of a post
+    --social-set-id <id>                     Social set (uses default if omitted)
+    --post-index <n>                         Zero-based index of the post to anchor on (required)
+    --selected-text <text>                   Exact substring of the post's text (required)
+    --text <text>                            Plain-text comment body (required)
+    --platform <platform>                    Required when draft has multiple commentable platforms
+    --occurrence <n>                         Zero-based occurrence when selected_text repeats (default: 0)
+
+  comments:reply <draft_id> <thread_id> --text <text>
+                                             Add a comment to an existing thread
+    --social-set-id <id>                     Social set (uses default if omitted)
+
+  comments:resolve <draft_id> <thread_id>    Resolve a comment thread (strips its markers from text)
+    --social-set-id <id>                     Social set (uses default if omitted)
+
+  comments:update <draft_id> <thread_id> <comment_id> --text <text>
+                                             Update a comment's text (author only)
+    --social-set-id <id>                     Social set (uses default if omitted)
+
+  comments:delete <draft_id> <thread_id> [comment_id]
+                                             Delete a thread, or a single comment within it.
+                                             If comment_id is the root, the entire thread (and
+                                             its markers) is deleted.
+    --social-set-id <id>                     Social set (uses default if omitted)
 
   tags:list [social_set_id]                  List all tags (uses default if ID omitted)
   tags:create [social_set_id] --name <name>  Create a new tag (uses default if ID omitted)
@@ -1916,6 +2149,24 @@ EXAMPLES:
   # Create draft with share URL
   ./typefully.js drafts:create 123 --platform x --text "Check this out" --share
 
+  # List unresolved comment threads on a draft
+  ./typefully.js comments:list 456
+
+  # Create a comment thread anchored on the first post
+  ./typefully.js comments:create 456 --post-index 0 --selected-text "exciting news" --text "Tighten this — passive."
+
+  # Reply to a thread
+  ./typefully.js comments:reply 456 7e2a... --text "Agreed, will revise."
+
+  # Resolve a thread (also strips its markers from posts[*].text)
+  ./typefully.js comments:resolve 456 7e2a...
+
+  # Delete the whole thread (comment_id omitted)
+  ./typefully.js comments:delete 456 7e2a...
+
+  # Get a draft as plain text (no <typ:comment-thread> markers) for LLM context / exports
+  ./typefully.js drafts:get 456 --exclude-comment-markers
+
   # Upload media and create post with it
   ./typefully.js media:upload 123 ./image.jpg
   # Returns: {"media_id": "abc-123", "status": "ready", "message": "Media uploaded and ready to use"}
@@ -1955,6 +2206,12 @@ const COMMANDS = {
   'queue:get': cmdQueueGet,
   'queue:schedule:get': cmdQueueScheduleGet,
   'queue:schedule:put': cmdQueueSchedulePut,
+  'comments:list': cmdCommentsList,
+  'comments:create': cmdCommentsCreate,
+  'comments:reply': cmdCommentsReply,
+  'comments:resolve': cmdCommentsResolve,
+  'comments:update': cmdCommentsUpdate,
+  'comments:delete': cmdCommentsDelete,
   'tags:list': cmdTagsList,
   'tags:create': cmdTagsCreate,
   'media:upload': cmdMediaUpload,
