@@ -21,6 +21,7 @@ The format is based on Keep a Changelog.
 - `analytics:followers:get [social_set_id]` to fetch X follower analytics, with optional `--start-date` / `--end-date` date filters and snake_case aliases.
 - `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
 - `--paid-partnership` / `--paid_partnership` and `--made-with-ai` / `--made_with_ai` for X draft create/update disclosure flags.
+- `--subscribers-only` and `--subscribers-only-posts <all|none|0,2>` for X draft create/update, allowing all-post or exact per-post Subscribers-only audience selection for eligible X Creator Subscriptions accounts.
 - Typefully skill docs now explain how to check `publishing_quota` with `social-sets:get`.
 
 ### Changed

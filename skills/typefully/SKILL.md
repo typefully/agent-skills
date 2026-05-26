@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-05-05
+last-updated: 2026-05-26
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -108,6 +108,7 @@ When determining which social set to use:
 | User says... | Action |
 |--------------|--------|
 | "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
+| "Draft a subscribers-only X post" | `drafts:create --platform x --text "..." --subscribers-only` (eligible X Creator Subscriptions accounts only) |
 | "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
 | "Mention a company on LinkedIn" | `linkedin:organizations:resolve --organization-url "<linkedin_url>"` then use returned `mention_text` in `drafts:create` |
 | "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
@@ -209,6 +210,33 @@ Here's what we shipped and why it matters..." --use-default
 ```
 
 So make sure to NEVER create multiple drafts unless the user explicitly wants separate drafts for each platform.
+
+## X Subscribers-Only Posts
+
+Subscribers-only posts are an X Creator Subscriptions feature. Use these flags only when the connected X account is eligible, approved for Creator Subscriptions, and has an active offering. Typefully can store and send the audience flag, but X may reject publishing for accounts that do not meet the [Creator Monetization Standards](https://help.x.com/en/rules-and-policies/content-monetization-standards) or the [Creator Subscriptions requirements](https://help.x.com/en/using-x/subscriptions-creator).
+
+Use `--subscribers-only` to mark every X post in the submitted draft/update as Subscribers-only:
+
+```bash
+./scripts/typefully.js drafts:create --platform x --text "For subscribers" --subscribers-only
+```
+
+Use `--subscribers-only-posts <all|none|0,2>` for exact zero-based per-post control:
+
+```bash
+# Only the second post is Subscribers-only
+./scripts/typefully.js drafts:create --platform x --text $'Public intro\n---\nSubscriber detail' --subscribers-only-posts 1
+
+# Clear Subscribers-only flags from an existing X draft
+./scripts/typefully.js drafts:update 456 --subscribers-only-posts none --use-default
+```
+
+**Important constraints:**
+
+- Subscribers-only flags are X-only and are applied only to X posts in a multi-platform draft.
+- Subscribers-only X posts cannot be combined with X Communities. Remove the community audience first.
+- Use zero-based indexes for `--subscribers-only-posts`, matching `comments:create --post-index`.
+- Mixed public/subscribers-only threads are supported by the Typefully API, but X's behavior for public replies after gated posts still needs real-account verification. When in doubt, keep all posts after the first gated post Subscribers-only.
 
 ## LinkedIn Mentions
 
@@ -332,12 +360,16 @@ When updating a draft that has comments, preserve anchors from `drafts:get` in t
 | `drafts:create ... --quote-post-url <url>` | Quote an existing X post URL |
 | `drafts:create ... --paid-partnership` | Label X post(s) as paid partnership |
 | `drafts:create ... --made-with-ai` | Label X post(s) as made with AI |
+| `drafts:create ... --subscribers-only` | Mark all X post(s) as Subscribers-only; eligible X Creator Subscriptions accounts only |
+| `drafts:create ... --subscribers-only-posts <all\|none\|0,2>` | Mark exact zero-based X post indexes as Subscribers-only |
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
 | `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
 | `drafts:update ... --quote-post-url <url>` | Update X post(s) in a draft to quote an existing post URL |
 | `drafts:update ... --paid-partnership` | Label existing or updated X post(s) as paid partnership |
 | `drafts:update ... --made-with-ai` | Label existing or updated X post(s) as made with AI |
+| `drafts:update ... --subscribers-only` | Mark all X post(s) as Subscribers-only; eligible X Creator Subscriptions accounts only |
+| `drafts:update ... --subscribers-only-posts <all\|none\|0,2>` | Set or clear exact zero-based Subscribers-only X post indexes; use `none` to clear |
 | `drafts:update [social_set_id] <draft_id> --tags "tag1,tag2"` | Update tags on an existing draft (content unchanged) |
 | `drafts:update ... --share` | Generate a public share URL for the draft |
 | `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
@@ -521,6 +553,20 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ./scripts/typefully.js drafts:create --platform x --text "Sponsored AI-assisted update" --paid-partnership --made-with-ai
 ```
 
+### Create an X Subscribers-only post
+```bash
+./scripts/typefully.js drafts:create --platform x --text "For subscribers" --subscribers-only
+```
+
+Only use this for eligible, approved X Creator Subscriptions accounts with an active offering.
+
+### Create a mixed X thread with one Subscribers-only post
+```bash
+./scripts/typefully.js drafts:create --platform x --text $'Public intro\n---\nSubscriber detail' --subscribers-only-posts 1
+```
+
+`--subscribers-only-posts` uses zero-based post indexes. It accepts `all`, `none`, or a comma-separated list like `0,2`.
+
 ### Update a draft to quote an X post
 ```bash
 ./scripts/typefully.js drafts:update 456 --platform x --quote-post-url "https://x.com/user/status/1234567890123456789" --use-default
@@ -529,6 +575,11 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ### Add an X content disclosure label to an existing draft
 ```bash
 ./scripts/typefully.js drafts:update 456 --made-with-ai --use-default
+```
+
+### Clear Subscribers-only flags from an X draft
+```bash
+./scripts/typefully.js drafts:update 456 --subscribers-only-posts none --use-default
 ```
 
 ### Create draft with share URL
@@ -654,6 +705,7 @@ When in doubt, create drafts for user review rather than publishing directly.
 - **X analytics**: Use `analytics:posts:list --start-date ... --end-date ...` to fetch post metrics for a social set; replies are excluded by default, and `--include-replies` opts back in
 - **X followers analytics**: Use `analytics:followers:get --start-date ... --end-date ...` to fetch daily follower counts, or omit dates for the API default range
 - **X content disclosures**: Use `--paid-partnership` and/or `--made-with-ai` on `drafts:create` or `drafts:update`; these flags are X-only and are applied only to X posts
+- **X Subscribers-only posts**: Use `--subscribers-only` or `--subscribers-only-posts` only for eligible, approved X Creator Subscriptions accounts; these flags are X-only and cannot be combined with X Communities
 - **Publishing quota**: Use `social-sets:get` and inspect `publishing_quota` to see remaining publish capacity and reset time
 - **Read from file**: Use `--file ./post.txt` instead of `--text` to read content from a file
 - **Sorting drafts**: Use `--sort` with values like `created_at`, `-created_at`, `scheduled_date`, etc.

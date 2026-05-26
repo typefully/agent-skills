@@ -103,6 +103,76 @@ describe('drafts', () => {
     assert.equal(server.requests.length, 1);
   }));
 
+  it('create-draft alias forwards subscribers-only flags', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/100812/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson.platforms.x.posts, [
+        { text: 'Subscriber update', subscribers_only: true },
+      ]);
+    },
+    json: { id: 'new-draft' },
+  });
+    const result = await runCli(
+      ['create-draft', 'Subscriber update', '--social-set-id', '100812', '--platform', 'x', '--subscribers-only'],
+      {
+        cwd: sandbox.cwd,
+        env: {
+          HOME: sandbox.home,
+          TYPEFULLY_API_BASE: baseUrl,
+          TYPEFULLY_API_KEY: apiKey,
+        },
+      }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'new-draft' });
+    server.assertNoPendingExpectations();
+    assert.equal(server.requests.length, 1);
+  }));
+
+  it('update-draft alias forwards subscribers-only post selectors', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/100813/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: { enabled: true, posts: [{ text: 'Existing' }] },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/100813/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson.platforms.x.posts, [
+        { text: 'Existing', subscribers_only: false },
+      ]);
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['update-draft', 'd1', '--social-set-id', '100813', '--subscribers-only-posts', 'none'],
+      {
+        cwd: sandbox.cwd,
+        env: {
+          HOME: sandbox.home,
+          TYPEFULLY_API_BASE: baseUrl,
+          TYPEFULLY_API_KEY: apiKey,
+        },
+      }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+    assert.equal(server.requests.length, 2);
+  }));
+
   it('draft target safety: drafts:get single arg with default social set requires --use-default', withCliHarness(async ({
     sandbox, server, baseUrl 
   }) => {
@@ -314,7 +384,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required',
+      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --subscribers-only, --subscribers-only-posts, or --force-overwrite-comments is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -592,6 +662,98 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:create applies subscribers-only only to X posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: 'Members update', subscribers_only: true }],
+          },
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'Members update' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x,linkedin', '--text', 'Members update', '--subscribers-only'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create applies subscribers-only to selected X post indexes', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson.platforms.x.posts, [
+        { text: 'Public intro', subscribers_only: false },
+        { text: 'Subscriber detail', subscribers_only: true },
+      ]);
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      [
+        'drafts:create',
+        '9',
+        '--platform',
+        'x',
+        '--text',
+        'Public intro\n---\nSubscriber detail',
+        '--subscribers-only-posts',
+        '1',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create accepts snake_case subscribers-only aliases', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson.platforms.x.posts, [
+        { text: 'Subscriber intro', subscribers_only: true },
+        { text: 'Public follow-up', subscribers_only: false },
+      ]);
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      [
+        'drafts:create',
+        '9',
+        '--platform',
+        'x',
+        '--text',
+        'Subscriber intro\n---\nPublic follow-up',
+        '--subscribers_only_posts',
+        '0',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
   it('drafts:create errors when quote URL is used without X platform', withCliHarness(async ({
     sandbox, server 
   }) => {
@@ -602,6 +764,48 @@ describe('drafts', () => {
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
       error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create errors when subscribers-only is used without X platform', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'linkedin', '--text', 'Hello', '--subscribers-only'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--subscribers-only is only supported for X posts. Include x in --platform or remove the subscribers-only flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create errors when subscribers-only indexes are out of range', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Hello', '--subscribers-only-posts', '1'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--subscribers-only-posts index 1 is out of range for 1 post(s)',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create errors when subscribers-only is combined with X community', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Hello', '--community', '999', '--subscribers-only'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'X subscribers-only posts cannot also be posted to an X community. Remove --community or the subscribers-only flag.',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -1044,6 +1248,115 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:update can set subscribers-only post indexes without changing text', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: {
+          enabled: true,
+          posts: [{ text: 'Existing 1' }, { text: 'Existing 2' }],
+        },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [
+              { text: 'Existing 1', subscribers_only: false },
+              { text: 'Existing 2', subscribers_only: true },
+            ],
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--subscribers-only-posts', '1'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update can clear subscribers-only post flags without changing text', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: {
+          enabled: true,
+          posts: [
+            { text: 'Existing 1', subscribers_only: true },
+            { text: 'Existing 2', subscribers_only: true },
+          ],
+        },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson.platforms.x.posts, [
+        { text: 'Existing 1', subscribers_only: false },
+        { text: 'Existing 2', subscribers_only: false },
+      ]);
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--subscribers-only-posts', 'none'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update errors before patching when existing X draft is a community post', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: {
+          enabled: true,
+          posts: [{ text: 'Existing' }],
+          settings: { community_id: '999' },
+        },
+      },
+    },
+  });
+
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--subscribers-only'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'Cannot apply subscribers-only posts because this draft is configured for an X community. Remove the community audience first.',
+    });
+    server.assertNoPendingExpectations();
+    assert.equal(server.requests.length, 1);
+  }));
+
   it('drafts:update errors when quote URL is used without X platform', withCliHarness(async ({
     sandbox, server 
   }) => {
@@ -1054,6 +1367,20 @@ describe('drafts', () => {
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
       error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:update errors when subscribers-only is used without X platform', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'linkedin', '--text', 'Hello', '--subscribers-only'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--subscribers-only is only supported for X posts. Include x in --platform or remove the subscribers-only flag.',
     });
     assert.equal(server.requests.length, 0);
   }));

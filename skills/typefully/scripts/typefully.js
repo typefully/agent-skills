@@ -414,13 +414,134 @@ function addXContentDisclosures(posts, disclosures) {
   });
 }
 
-function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
-  if ((quotePostUrl || disclosures.hasAny) && !platformList.includes('x')) {
+function getXSubscribersOnlySelectionFromParsed(parsed) {
+  const hasAll = Boolean(parsed['subscribers-only'] || parsed.subscribers_only);
+  const hasPostsPrimary = Object.prototype.hasOwnProperty.call(parsed, 'subscribers-only-posts');
+  const hasPostsAlias = Object.prototype.hasOwnProperty.call(parsed, 'subscribers_only_posts');
+
+  let postsValue = null;
+  if (hasPostsPrimary) {
+    postsValue = coerceFlagValueToString(parsed['subscribers-only-posts'], '--subscribers-only-posts');
+  }
+  if (hasPostsAlias) {
+    const aliasValue = coerceFlagValueToString(parsed.subscribers_only_posts, '--subscribers_only_posts');
+    if (postsValue && postsValue !== aliasValue) {
+      error('Conflicting subscribers-only post selector values', {
+        '--subscribers-only-posts': postsValue,
+        '--subscribers_only_posts': aliasValue,
+      });
+    }
+    postsValue = postsValue || aliasValue;
+  }
+
+  let selection = null;
+  if (postsValue != null) {
+    selection = parseSubscribersOnlyPostsSelector(postsValue);
+  }
+
+  if (hasAll && selection && selection.mode !== 'all') {
+    error('Conflicting subscribers-only options', {
+      hint: 'Use either --subscribers-only for all X posts or --subscribers-only-posts for exact per-post selection.',
+    });
+  }
+
+  if (hasAll) {
+    return { hasAny: true, enablesAny: true, mode: 'all', explicitPostsSelector: false };
+  }
+
+  if (selection) {
+    return { ...selection, explicitPostsSelector: true };
+  }
+
+  return { hasAny: false, enablesAny: false, mode: null, explicitPostsSelector: false };
+}
+
+function parseSubscribersOnlyPostsSelector(value) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'all') {
+    return { hasAny: true, enablesAny: true, mode: 'all' };
+  }
+  if (normalized === 'none') {
+    return { hasAny: true, enablesAny: false, mode: 'none' };
+  }
+
+  const parts = value.split(',').map(part => part.trim()).filter(Boolean);
+  if (parts.length === 0 || parts.some(part => !/^\d+$/.test(part))) {
+    error('--subscribers-only-posts must be "all", "none", or a comma-separated list of zero-based post indexes');
+  }
+
+  const indexes = [...new Set(parts.map(part => Number.parseInt(part, 10)))];
+  return { hasAny: true, enablesAny: indexes.length > 0, mode: 'indexes', indexes };
+}
+
+function subscribersOnlySelectionToFlagValue(selection) {
+  if (selection.mode === 'all') return 'all';
+  if (selection.mode === 'none') return 'none';
+  return selection.indexes.join(',');
+}
+
+function addXSubscribersOnly(posts, selection) {
+  if (!selection.hasAny) return posts;
+  if (selection.mode === 'all') {
+    return posts.map(post => ({ ...post, subscribers_only: true }));
+  }
+  if (selection.mode === 'none') {
+    return posts.map(post => ({ ...post, subscribers_only: false }));
+  }
+
+  for (const index of selection.indexes) {
+    if (index >= posts.length) {
+      error(`--subscribers-only-posts index ${index} is out of range for ${posts.length} post(s)`);
+    }
+  }
+
+  return posts.map((post, index) => ({
+    ...post,
+    subscribers_only: selection.indexes.includes(index),
+  }));
+}
+
+function applyXPostOptions(posts, { quotePostUrl, disclosures, subscribersOnly }) {
+  return addXSubscribersOnly(
+    addXContentDisclosures(addQuotePostUrl(posts, quotePostUrl), disclosures),
+    subscribersOnly,
+  );
+}
+
+function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures, subscribersOnly }) {
+  if ((quotePostUrl || disclosures.hasAny || subscribersOnly.hasAny) && !platformList.includes('x')) {
     if (quotePostUrl) {
       error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
     }
+    if (subscribersOnly.hasAny) {
+      error('--subscribers-only is only supported for X posts. Include x in --platform or remove the subscribers-only flag.');
+    }
     error('--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.');
   }
+}
+
+function validateXSubscribersOnlyCommunityConflict(communityId, subscribersOnly) {
+  if (!communityId || !subscribersOnly.enablesAny) return;
+  error('X subscribers-only posts cannot also be posted to an X community. Remove --community or the subscribers-only flag.');
+}
+
+function validateExistingXCommunityForSubscribersOnly(existing, subscribersOnly) {
+  if (!subscribersOnly.enablesAny) return;
+  const communityId = existing.platforms?.x?.settings?.community_id;
+  if (!communityId) return;
+  error('Cannot apply subscribers-only posts because this draft is configured for an X community. Remove the community audience first.');
+}
+
+function forwardSubscribersOnlyFlags(argv, parsed) {
+  const subscribersOnly = getXSubscribersOnlySelectionFromParsed(parsed);
+  if (!subscribersOnly.hasAny) return;
+
+  if (subscribersOnly.mode === 'all' && !subscribersOnly.explicitPostsSelector) {
+    argv.push('--subscribers-only');
+    return;
+  }
+
+  argv.push('--subscribers-only-posts', subscribersOnlySelectionToFlagValue(subscribersOnly));
 }
 
 function parseCsvArg(value, flagName) {
@@ -1097,10 +1218,13 @@ async function cmdDraftsCreate(args) {
     paid_partnership: 'boolean',
     'made-with-ai': 'boolean',
     made_with_ai: 'boolean',
+    'subscribers-only': 'boolean',
+    subscribers_only: 'boolean',
   });
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
+  const xSubscribersOnly = getXSubscribersOnlySelectionFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1142,7 +1266,9 @@ async function cmdDraftsCreate(args) {
   validateXOnlyPostOptions(platformList, {
     quotePostUrl,
     disclosures: xContentDisclosures,
+    subscribersOnly: xSubscribersOnly,
   });
+  validateXSubscribersOnlyCommunityConflict(parsed.community, xSubscribersOnly);
 
   // Split text into posts (thread support)
   const posts = splitThreadText(text);
@@ -1164,7 +1290,11 @@ async function cmdDraftsCreate(args) {
   const platformsObj = {};
   for (const platform of platformList) {
     const postsArray = platform === 'x'
-      ? addXContentDisclosures(addQuotePostUrl(basePostsArray, quotePostUrl), xContentDisclosures)
+      ? applyXPostOptions(basePostsArray, {
+          quotePostUrl,
+          disclosures: xContentDisclosures,
+          subscribersOnly: xSubscribersOnly,
+        })
       : basePostsArray;
     const platformConfig = {
       enabled: true,
@@ -1221,6 +1351,8 @@ async function cmdDraftsUpdate(args) {
     paid_partnership: 'boolean',
     'made-with-ai': 'boolean',
     made_with_ai: 'boolean',
+    'subscribers-only': 'boolean',
+    subscribers_only: 'boolean',
     'exclude-comment-markers': 'boolean',
     exclude_comment_markers: 'boolean',
     'force-overwrite-comments': 'boolean',
@@ -1229,6 +1361,7 @@ async function cmdDraftsUpdate(args) {
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
+  const xSubscribersOnly = getXSubscribersOnlySelectionFromParsed(parsed);
 
   // Get text content
   let text = parsed.text;
@@ -1241,7 +1374,7 @@ async function cmdDraftsUpdate(args) {
 
   const body = {};
 
-  const shouldUpdatePosts = Boolean(text || quotePostUrl || xContentDisclosures.hasAny);
+  const shouldUpdatePosts = Boolean(text || quotePostUrl || xContentDisclosures.hasAny || xSubscribersOnly.hasAny);
   if (shouldUpdatePosts) {
     const explicitPlatformList = parsed.platform
       ? parsed.platform.split(',').map(p => p.trim())
@@ -1250,6 +1383,7 @@ async function cmdDraftsUpdate(args) {
       validateXOnlyPostOptions(explicitPlatformList, {
         quotePostUrl,
         disclosures: xContentDisclosures,
+        subscribersOnly: xSubscribersOnly,
       });
     }
 
@@ -1258,6 +1392,7 @@ async function cmdDraftsUpdate(args) {
 
     // Fetch existing draft to determine platforms (and for --append, to get posts)
     const existing = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
+    validateExistingXCommunityForSubscribersOnly(existing, xSubscribersOnly);
 
     // Determine which platforms to update
     let platformList;
@@ -1283,6 +1418,7 @@ async function cmdDraftsUpdate(args) {
     validateXOnlyPostOptions(platformList, {
       quotePostUrl,
       disclosures: xContentDisclosures,
+      subscribersOnly: xSubscribersOnly,
     });
 
     let postsArray;
@@ -1316,10 +1452,10 @@ async function cmdDraftsUpdate(args) {
         });
       }
     } else {
-      // X-only metadata update: preserve existing X posts and add quote/disclosure attrs.
+      // X-only metadata lives on each post, so metadata-only updates must round-trip existing X posts.
       const existingXPosts = existing.platforms?.x?.posts;
       if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
-        if (quotePostUrl && !xContentDisclosures.hasAny) {
+        if (quotePostUrl && !xContentDisclosures.hasAny && !xSubscribersOnly.hasAny) {
           error('Cannot apply --quote-post-url because this draft has no existing X posts');
         }
         error('Cannot apply X-only post options because this draft has no existing X posts');
@@ -1332,7 +1468,11 @@ async function cmdDraftsUpdate(args) {
     const platformsObj = {};
     for (const p of platformList) {
       const platformPosts = p === 'x'
-        ? addXContentDisclosures(addQuotePostUrl(postsArray, quotePostUrl), xContentDisclosures)
+        ? applyXPostOptions(postsArray, {
+            quotePostUrl,
+            disclosures: xContentDisclosures,
+            subscribersOnly: xSubscribersOnly,
+          })
         : postsArray;
       platformsObj[p] = {
         enabled: true,
@@ -1367,7 +1507,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
+    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --subscribers-only, --subscribers-only-posts, or --force-overwrite-comments is required');
   }
 
   const params = new URLSearchParams();
@@ -1395,6 +1535,8 @@ async function cmdCreateDraftAlias(args) {
     paid_partnership: 'boolean',
     'made-with-ai': 'boolean',
     made_with_ai: 'boolean',
+    'subscribers-only': 'boolean',
+    subscribers_only: 'boolean',
   });
   const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
 
@@ -1428,6 +1570,7 @@ async function cmdCreateDraftAlias(args) {
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
   if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
   if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
+  forwardSubscribersOnlyFlags(forwarded, parsed);
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1442,6 +1585,8 @@ async function cmdUpdateDraftAlias(args) {
     paid_partnership: 'boolean',
     'made-with-ai': 'boolean',
     made_with_ai: 'boolean',
+    'subscribers-only': 'boolean',
+    subscribers_only: 'boolean',
   });
   const socialSetId = requireSocialSetId(getSocialSetIdFromParsed(parsed));
 
@@ -1474,6 +1619,7 @@ async function cmdUpdateDraftAlias(args) {
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
   if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
   if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
+  forwardSubscribersOnlyFlags(forwarded, parsed);
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1942,6 +2088,11 @@ COMMANDS:
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
+    --subscribers-only                       Mark all X posts as Subscribers-only
+                                             (eligible X Creator Subscriptions accounts only)
+    --subscribers-only-posts <all|none|0,2>  Mark exact zero-based X post indexes as
+                                             Subscribers-only. Also accepts:
+                                             --subscribers_only_posts
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
@@ -1958,6 +2109,11 @@ COMMANDS:
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
+    --subscribers-only                       Mark all X posts as Subscribers-only
+                                             (eligible X Creator Subscriptions accounts only)
+    --subscribers-only-posts <all|none|0,2>  Mark exact zero-based X post indexes as
+                                             Subscribers-only. Use "none" to clear.
+                                             Also accepts: --subscribers_only_posts
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --exclude-comment-markers                Render response posts[*].text without
@@ -2143,8 +2299,17 @@ EXAMPLES:
   # Create an X post with content disclosure labels
   ./typefully.js drafts:create 123 --platform x --text "Sponsored AI-assisted update" --paid-partnership --made-with-ai
 
+  # Create an X Subscribers-only post (eligible Creator Subscriptions accounts only)
+  ./typefully.js drafts:create 123 --platform x --text "For subscribers" --subscribers-only
+
+  # Create a mixed X thread with only the second post Subscribers-only
+  ./typefully.js drafts:create 123 --platform x --text $'Public intro\\n---\\nSubscriber detail' --subscribers-only-posts 1
+
   # Update an X draft to quote a post
   ./typefully.js drafts:update 123 456 --platform x --text "Updated take" --quote-post-url "https://x.com/user/status/1234567890123456789"
+
+  # Clear Subscribers-only flags from an existing X draft
+  ./typefully.js drafts:update 123 456 --subscribers-only-posts none
 
   # Create draft with share URL
   ./typefully.js drafts:create 123 --platform x --text "Check this out" --share
