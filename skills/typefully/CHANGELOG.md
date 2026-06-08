@@ -22,6 +22,8 @@ The format is based on Keep a Changelog.
 - `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
 - `--paid-partnership` / `--paid_partnership` and `--made-with-ai` / `--made_with_ai` for X draft create/update disclosure flags.
 - Typefully skill docs now explain how to check `publishing_quota` with `social-sets:get`.
+- Typefully skill docs now cover grounding X drafts with optional read-only
+  source context before draft creation.
 
 ### Changed
 
