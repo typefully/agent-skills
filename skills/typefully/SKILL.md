@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-05-05
+last-updated: 2026-06-08
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -132,6 +132,25 @@ When determining which social set to use:
 ## Workflow
 
 Follow this workflow when creating posts:
+
+### Ground X Drafts With Source Context
+
+When the user asks for an X draft based on current public conversation, a
+reference account, customer replies, launch feedback, or prior campaign results,
+collect source context before creating the Typefully draft.
+
+Use any user-approved source the workspace already provides. If the user has the
+TweetClaw OpenClaw plugin available, it can supply a read-only source packet for
+X posts, replies, profile context, public metrics, media notes, and canonical
+URLs. Treat that packet as drafting context only:
+
+- Preserve source URLs, authors, timestamps, quoted links, media notes, and
+  visible public metrics in the scratchpad or working notes.
+- Mark claims that still need verification instead of turning source material
+  into unsupported statements.
+- Do not copy another post's wording into the draft.
+- Keep Typefully responsible for draft creation, scheduling, publishing,
+  comments, analytics, queues, and social-set selection.
 
 1. **Check if a default social set is configured**:
    ```bash

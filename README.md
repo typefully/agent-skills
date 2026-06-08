@@ -78,6 +78,17 @@ Ask your AI agent things like:
 - "Create a thread about [topic]"
 - "Post this to X and LinkedIn"
 
+### Ground X drafts with source context
+
+When an X draft should reflect current public conversation, customer replies,
+launch feedback, or a reference account, gather source context before creating
+the Typefully draft. User-approved tools can provide a source packet with post
+URLs, authors, timestamps, public metrics, media notes, and quoted links.
+
+If your agent has the TweetClaw OpenClaw plugin available, use it only for
+read-only X source context. Typefully remains responsible for creating,
+scheduling, publishing, commenting on, and measuring drafts.
+
 ## Local Development
 
 To test this skill locally, install it from the repo root:
