@@ -8,6 +8,10 @@ AI agent skills for drafting, scheduling, and managing social media posts across
 
 Built on the [Typefully API](https://typefully.com/docs/api). [Typefully](https://typefully.com) is a writing and scheduling app used by 200k+ top creators and teams to grow on X, LinkedIn, Threads, and Bluesky.
 
+## Optional X/Twitter Research Companion
+
+Hermes Agent users who research X/Twitter before scheduling can pair this Typefully skill with [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet). Use Hermes Tweet for account context, search, monitoring, follower exports, and approval-gated draft/action workflows, then use Typefully for scheduling.
+
 ## What Are Skills?
 
 Skills are markdown files that give AI agents specialized knowledge and workflows for specific tasks. Add this to your project and your AI agent will be able to create, schedule, and publish social media content.
