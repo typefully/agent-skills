@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-05-05
+last-updated: 2026-07-06
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -45,6 +45,8 @@ Before using this skill, ensure:
 1. `TYPEFULLY_API_KEY` environment variable
 2. `./.typefully/config.json` (project-local, in user's working directory)
 3. `~/.config/typefully/config.json` (user-global)
+
+Development only: pass `--api-base-url <url>` to target another API base; `/v2` is appended when omitted.
 
 ### Handling "API key not found" errors
 
@@ -108,6 +110,7 @@ When determining which social set to use:
 | User says... | Action |
 |--------------|--------|
 | "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
+| "Draft an X Article" | `drafts:create --platform x_article --content-markdown "# Title\n\nArticle body..."` |
 | "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
 | "Mention a company on LinkedIn" | `linkedin:organizations:resolve --organization-url "<linkedin_url>"` then use returned `mention_text` in `drafts:create` |
 | "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
@@ -125,6 +128,7 @@ When determining which social set to use:
 | "Show my queue for next week" | `queue:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
 | "List comments on this draft" | `comments:list <draft_id>` |
 | "Comment on the phrase 'exciting news'" | `comments:create <draft_id> --post-index 0 --selected-text "exciting news" --text "..."` |
+| "Comment on this X Article phrase" | `comments:create <draft_id> --platform x_article --selected-text "article phrase" --text "..."` |
 | "Reply to that comment thread" | `comments:reply <draft_id> <thread_id> --text "..."` |
 | "Resolve / delete a comment thread" | `comments:resolve <draft_id> <thread_id>` / `comments:delete <draft_id> <thread_id>` |
 | "Get the draft without comment annotations" | `drafts:get <draft_id> --exclude-comment-markers` |
@@ -183,6 +187,8 @@ Tags help organize drafts within Typefully. **Always check existing tags before 
 
 If a single draft needs to be created for different platforms, you need to make sure to create **a single draft** and not multiple drafts.
 
+X Articles are the exception to cross-platform posting: `x_article` is standalone and cannot be combined with `x`, LinkedIn, Threads, Bluesky, Mastodon, or `--all`.
+
 When the content is the same across platforms, create a single draft with multiple platforms:
 
 ```bash
@@ -232,9 +238,13 @@ Then include that `mention_text` in your LinkedIn draft text:
 ./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
 ```
 
+## X Articles
+
+X Articles use the normal draft lifecycle but a different payload shape from X posts. Always use `--platform x_article` plus article-specific flags. See `X_ARTICLES.md` in this skill for detailed payload examples, supported markdown blocks, embeds, covers, and comment workflows.
+
 ## Comments on Drafts
 
-Drafts can have comment threads anchored to a selected span or to a whole paragraph. `drafts:get` returns `posts[*].text` with inline `<typ:comment-thread>` anchors by default so agents can preserve those anchors during edits.
+Drafts can have comment threads anchored to a selected span or to a whole paragraph. `drafts:get` returns `posts[*].text` and X Article `content_markdown` with inline `<typ:comment-thread>` anchors by default so agents can preserve those anchors during edits.
 
 **Core rules for agents:**
 
@@ -242,7 +252,7 @@ Drafts can have comment threads anchored to a selected span or to a whole paragr
 2. **Do not resolve or delete comments without explicit user instruction.** After editing text that may address feedback, ask whether to resolve the specific thread(s). Never infer that "clean up", "tidy", or "looks addressed" means resolve/delete.
 3. **Talk to users about comments, not marker syntax.** Describe anchors in plain English, such as "comment on the word 'constraint'" or "comment on the paragraph starting with ...". Only mention marker syntax when explaining marker-related API errors or when the user asks how anchors work.
 
-Default edit flow for drafts with comments: get the draft with anchors enabled, rewrite while preserving/repositioning every anchor, patch with `drafts:update --text ...` without force flags, then ask whether to resolve any addressed comments. Use `comments:list <draft_id> --status all` when you need thread ids, comment bodies, authors, or resolved status.
+Default edit flow for drafts with comments: get the draft with anchors enabled, rewrite while preserving/repositioning every anchor, patch with `drafts:update --text ...` for posts or `drafts:update --platform x_article --content-markdown ...` for X Articles without force flags, then ask whether to resolve any addressed comments. Use `comments:list <draft_id> --status all` when you need thread ids, comment bodies, authors, or resolved status.
 
 Use `drafts:get --exclude-comment-markers` only for display, LLM context, export, or preview text that will not be patched back.
 
@@ -257,13 +267,14 @@ When the user asks to accept/apply/address a comment, fetch without `--exclude-c
 | Command | Purpose |
 |---------|---------|
 | `comments:list <draft_id>` | List comment threads. Filters: `--platform`, `--status` (`unresolved` default / `resolved` / `all`), `--limit`, `--offset` |
-| `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` | Create a comment thread anchored on exact selected text. Optional: `--platform`, `--occurrence` |
+| `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` | Create a comment thread anchored on exact post text. Optional: `--platform`, `--occurrence` |
+| `comments:create <draft_id> --platform x_article --selected-text "..." --text "..."` | Create a comment thread anchored on visible X Article text; omit `--post-index` |
 | `comments:reply <draft_id> <thread_id> --text "..."` | Add a reply to a thread |
 | `comments:resolve <draft_id> <thread_id>` | Resolve a thread, only after explicit user confirmation |
 | `comments:update <draft_id> <thread_id> <comment_id> --text "..."` | Edit a comment's text; comment-author only |
 | `comments:delete <draft_id> <thread_id> [comment_id]` | Delete a thread or one comment, only after explicit user instruction |
 
-`comments:create` requires `selected_text` to exactly match the post text. If it repeats, pass zero-based `--occurrence`; for LinkedIn mentions, select the entire `@[Name](urn:li:...)` substring or stay outside it. Pass `--platform` only when the draft has multiple commentable platforms.
+`comments:create` requires `selected_text` to exactly match the post text, or visible X Article text when `--platform x_article` is used. If it repeats, pass zero-based `--occurrence`; for LinkedIn mentions, select the entire `@[Name](urn:li:...)` substring or stay outside it. Pass `--platform` when the draft has multiple commentable platforms or when commenting on an X Article. Omit `--post-index` for X Article comments.
 
 ## Commands Reference
 
@@ -324,6 +335,8 @@ When updating a draft that has comments, preserve anchors from `drafts:get` in t
 | `drafts:get ... --exclude-comment-markers` | Render `posts[*].text` without comment anchors (read-only / display use only) |
 | `drafts:create [social_set_id] --text "..."` | Create a new draft (auto-selects platform) |
 | `drafts:create [social_set_id] --platform x --text "..."` | Create a draft for specific platform(s) |
+| `drafts:create [social_set_id] --platform x_article --content-markdown "..."` | Create a standalone X Article draft |
+| `drafts:create ... --cover-media-id <media_id\|null>` | Set an X Article cover image; use literal `null` on update to remove it |
 | `drafts:create [social_set_id] --all --text "..."` | Create a draft for all connected platforms |
 | `drafts:create [social_set_id] --file <path>` | Create draft from file content |
 | `drafts:create ... --media <media_ids>` | Create draft with attached media |
@@ -335,6 +348,8 @@ When updating a draft that has comments, preserve anchors from `drafts:get` in t
 | `drafts:create ... --share` | Generate a public share URL for the draft |
 | `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
 | `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
+| `drafts:update ... --platform x_article --content-markdown "..."` | Update X Article markdown |
+| `drafts:update ... --platform x_article --cover-media-id null` | Remove the X Article cover image |
 | `drafts:update ... --quote-post-url <url>` | Update X post(s) in a draft to quote an existing post URL |
 | `drafts:update ... --paid-partnership` | Label existing or updated X post(s) as paid partnership |
 | `drafts:update ... --made-with-ai` | Label existing or updated X post(s) as made with AI |
@@ -425,6 +440,9 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 ```bash
 ./scripts/typefully.js drafts:create 123 --text "Hello, world!"
 ```
+
+### Create or update an X Article
+See `X_ARTICLES.md` in this skill for X Article examples, payload shapes, supported markdown, covers, embeds, and comment workflows.
 
 ### Create a cross-platform post (specific platforms)
 ```bash
@@ -595,6 +613,7 @@ Use these exact names for the `--platform` option:
 - `threads` - Threads
 - `bluesky` - Bluesky
 - `mastodon` - Mastodon
+- `x_article` - X Article (standalone; cannot be combined with other platforms)
 
 ## Draft URLs
 
@@ -643,7 +662,7 @@ When in doubt, create drafts for user review rather than publishing directly.
 ## Tips
 
 - **Smart platform default**: If `--platform` is omitted, the first connected platform is auto-selected
-- **All platforms**: Use `--all` to post to all connected platforms at once
+- **All platforms**: Use `--all` to post to all connected post platforms at once; it excludes standalone `x_article`
 - **Character limits**: X (280), LinkedIn (3000), Threads (500), Bluesky (300), Mastodon (500)
 - **LinkedIn mentions**: Use `@[Name](urn:li:organization:ID)` in post text; resolve IDs via `linkedin:organizations:resolve`
 - **Thread creation**: Use `---` on its own line to split into multiple posts (thread)
@@ -654,6 +673,7 @@ When in doubt, create drafts for user review rather than publishing directly.
 - **X analytics**: Use `analytics:posts:list --start-date ... --end-date ...` to fetch post metrics for a social set; replies are excluded by default, and `--include-replies` opts back in
 - **X followers analytics**: Use `analytics:followers:get --start-date ... --end-date ...` to fetch daily follower counts, or omit dates for the API default range
 - **X content disclosures**: Use `--paid-partnership` and/or `--made-with-ai` on `drafts:create` or `drafts:update`; these flags are X-only and are applied only to X posts
+- **X Articles**: Use `--platform x_article --content-markdown "..."`; article covers use `--cover-media-id`, and `--cover-media-id null` removes an existing cover
 - **Publishing quota**: Use `social-sets:get` and inspect `publishing_quota` to see remaining publish capacity and reset time
 - **Read from file**: Use `--file ./post.txt` instead of `--text` to read content from a file
 - **Sorting drafts**: Use `--sort` with values like `created_at`, `-created_at`, `scheduled_date`, etc.

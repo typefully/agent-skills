@@ -56,6 +56,23 @@ describe('help', () => {
 });
 
 describe('global flag behavior', () => {
+  it('supports --api-base-url and appends /v2 when omitted', withCliHarness(async ({ server, apiKey, baseUrl, run }) => {
+    const rootUrl = baseUrl.replace(/\/v2$/, '');
+    server.expect('GET', '/v2/social-sets/9/tags', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.equal(req.search, '?limit=50');
+      },
+      json: { results: [] },
+    });
+
+    const result = await run(['--api-base-url', rootUrl, 'tags:list', '--social-set-id', '9'], {
+      env: { TYPEFULLY_API_BASE: 'https://example.invalid/v2' },
+    });
+
+    expectCliOk(result, { results: [] });
+  }));
+
   it('allows tags:list with --social-set-id and no positional social set', withCliHarness(async ({ server, apiKey, run }) => {
     server.expect('GET', '/v2/social-sets/9/tags', {
       assert: (req) => {

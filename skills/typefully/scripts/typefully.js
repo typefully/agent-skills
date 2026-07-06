@@ -13,12 +13,34 @@ const os = require('os');
 const readline = require('readline');
 
 // Allow overriding API base for tests / self-hosted mocks.
-const API_BASE = process.env.TYPEFULLY_API_BASE || 'https://api.typefully.com/v2';
+let API_BASE = normalizeApiBase(process.env.TYPEFULLY_API_BASE || 'https://api.typefully.com/v2');
 const GLOBAL_CONFIG_DIR = path.join(os.homedir(), '.config', 'typefully');
 const GLOBAL_CONFIG_FILE = path.join(GLOBAL_CONFIG_DIR, 'config.json');
 const LOCAL_CONFIG_DIR = '.typefully';
 const LOCAL_CONFIG_FILE = path.join(LOCAL_CONFIG_DIR, 'config.json');
 const API_KEY_URL = 'https://typefully.com/?settings=api';
+const X_ARTICLE_PLATFORM = 'x_article';
+const POST_PLATFORM_ORDER = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon'];
+const X_ARTICLE_POST_ONLY_FLAGS = [
+  ['text', '--text'],
+  ['file', '--file'],
+  ['media', '--media'],
+  ['append', '--append'],
+  ['reply-to', '--reply-to'],
+  ['community', '--community'],
+  ['quote-post-url', '--quote-post-url'],
+  ['quote-url', '--quote-url'],
+  ['paid-partnership', '--paid-partnership'],
+  ['paid_partnership', '--paid_partnership'],
+  ['made-with-ai', '--made-with-ai'],
+  ['made_with_ai', '--made_with_ai'],
+];
+
+function normalizeApiBase(value) {
+  const trimmed = String(value || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return 'https://api.typefully.com/v2';
+  return trimmed.endsWith('/v2') ? trimmed : `${trimmed}/v2`;
+}
 
 // Content-type mapping for media uploads
 const CONTENT_TYPES = {
@@ -221,6 +243,28 @@ function requireApiKey() {
   return result.key;
 }
 
+function extractGlobalArgs(args) {
+  const result = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--api-base-url') {
+      const value = args[i + 1];
+      if (!value || String(value).startsWith('--')) {
+        error('--api-base-url requires a value');
+      }
+      API_BASE = normalizeApiBase(value);
+      i++;
+      continue;
+    }
+
+    result.push(arg);
+  }
+
+  return result;
+}
+
 function extractApiErrorMessage(data) {
   if (!data || typeof data !== 'object') return null;
 
@@ -421,6 +465,82 @@ function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
     }
     error('--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.');
   }
+}
+
+function hasParsedArg(parsed, key) {
+  return Object.prototype.hasOwnProperty.call(parsed, key);
+}
+
+function parsePlatformList(value) {
+  const platforms = String(value)
+    .split(',')
+    .map(p => p.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (platforms.length === 0) {
+    error('--platform requires at least one platform');
+  }
+
+  return platforms;
+}
+
+function hasXArticleDraftFlags(parsed) {
+  return hasParsedArg(parsed, 'content-markdown') || hasParsedArg(parsed, 'cover-media-id');
+}
+
+function validateXArticlePlatformUsage(platformList, parsed) {
+  const hasXArticle = platformList.includes(X_ARTICLE_PLATFORM);
+  const hasArticleFlags = hasXArticleDraftFlags(parsed);
+
+  if (hasXArticle && platformList.length > 1) {
+    error('x_article is standalone and cannot be combined with other platforms');
+  }
+
+  if (hasArticleFlags && !(platformList.length === 1 && hasXArticle)) {
+    error('X Article flags require --platform x_article');
+  }
+
+  if (!hasXArticle) return;
+
+  for (const [key, flagName] of X_ARTICLE_POST_ONLY_FLAGS) {
+    if (hasParsedArg(parsed, key)) {
+      error(`${flagName} cannot be used with --platform x_article`);
+    }
+  }
+}
+
+function buildXArticlePlatformConfig(parsed, { requireContent }) {
+  const hasContentMarkdown = hasParsedArg(parsed, 'content-markdown');
+  const hasCoverMediaId = hasParsedArg(parsed, 'cover-media-id');
+
+  if (requireContent && !hasContentMarkdown) {
+    error('--content-markdown is required for X Article drafts');
+  }
+
+  const config = {};
+  if (hasContentMarkdown) {
+    config.content_markdown = coerceFlagValueToString(
+      parsed['content-markdown'],
+      '--content-markdown',
+    );
+  }
+  if (hasCoverMediaId) {
+    const coverMediaId = coerceFlagValueToString(parsed['cover-media-id'], '--cover-media-id');
+    config.cover_media_id = coverMediaId === 'null' ? null : coverMediaId;
+  }
+
+  return config;
+}
+
+function getPostTextFromParsed(parsed) {
+  let text = parsed.text;
+  if (parsed.file) {
+    if (!fs.existsSync(parsed.file)) {
+      error(`File not found: ${parsed.file}`);
+    }
+    text = fs.readFileSync(parsed.file, 'utf-8');
+  }
+  return text;
 }
 
 function parseCsvArg(value, flagName) {
@@ -1062,10 +1182,9 @@ async function getFirstConnectedPlatform(socialSetId) {
 
   // Check each platform for connection
   // The API returns platforms as an object where each key exists if that platform is connected
-  const platformOrder = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon'];
   const platforms = socialSet.platforms || {};
 
-  for (const platform of platformOrder) {
+  for (const platform of POST_PLATFORM_ORDER) {
     if (platforms[platform]) {
       return platform;
     }
@@ -1076,11 +1195,10 @@ async function getFirstConnectedPlatform(socialSetId) {
 
 async function getAllConnectedPlatforms(socialSetId) {
   const socialSet = await apiRequest('GET', `/social-sets/${socialSetId}`);
-  const platformOrder = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon'];
   const platforms = socialSet.platforms || {};
   const connected = [];
 
-  for (const platform of platformOrder) {
+  for (const platform of POST_PLATFORM_ORDER) {
     if (platforms[platform]) {
       connected.push(platform);
     }
@@ -1102,24 +1220,15 @@ async function cmdDraftsCreate(args) {
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
 
-  // Get text content
-  let text = parsed.text;
-  if (parsed.file) {
-    if (!fs.existsSync(parsed.file)) {
-      error(`File not found: ${parsed.file}`);
-    }
-    text = fs.readFileSync(parsed.file, 'utf-8');
-  }
-
-  if (!text) {
-    error('--text or --file is required');
-  }
-
   // Determine platform(s)
   let platforms = parsed.platform;
 
   if (parsed.all && parsed.platform) {
     error('Cannot use both --all and --platform flags');
+  }
+
+  if (hasXArticleDraftFlags(parsed) && !parsed.platform) {
+    error('X Article flags require --platform x_article');
   }
 
   if (parsed.all) {
@@ -1138,54 +1247,67 @@ async function cmdDraftsCreate(args) {
     platforms = defaultPlatform;
   }
 
-  const platformList = platforms.split(',').map(p => p.trim());
-  validateXOnlyPostOptions(platformList, {
-    quotePostUrl,
-    disclosures: xContentDisclosures,
-  });
-
-  // Split text into posts (thread support)
-  const posts = splitThreadText(text);
-
-  // Parse media IDs
-  const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
-
-  // Build posts array
-  const basePostsArray = posts.map((postText, index) => {
-    const post = { text: postText };
-    // Attach media only to first post
-    if (index === 0 && mediaIds.length > 0) {
-      post.media_ids = mediaIds;
-    }
-    return post;
-  });
-
-  // Build platforms object
-  const platformsObj = {};
-  for (const platform of platformList) {
-    const postsArray = platform === 'x'
-      ? addXContentDisclosures(addQuotePostUrl(basePostsArray, quotePostUrl), xContentDisclosures)
-      : basePostsArray;
-    const platformConfig = {
-      enabled: true,
-      posts: postsArray,
-    };
-
-    // X-specific settings
-    if (platform === 'x' && (parsed['reply-to'] || parsed.community)) {
-      platformConfig.settings = {};
-      if (parsed['reply-to']) {
-        platformConfig.settings.reply_to_url = parsed['reply-to'];
-      }
-      if (parsed.community) {
-        platformConfig.settings.community_id = parsed.community;
-      }
-    }
-
-    platformsObj[platform] = platformConfig;
-  }
+  const platformList = parsePlatformList(platforms);
+  validateXArticlePlatformUsage(platformList, parsed);
 
   // Build request body
+  const platformsObj = {};
+
+  if (platformList.includes(X_ARTICLE_PLATFORM)) {
+    platformsObj[X_ARTICLE_PLATFORM] = buildXArticlePlatformConfig(parsed, {
+      requireContent: true,
+    });
+  } else {
+    const text = getPostTextFromParsed(parsed);
+    if (!text) {
+      error('--text or --file is required');
+    }
+
+    validateXOnlyPostOptions(platformList, {
+      quotePostUrl,
+      disclosures: xContentDisclosures,
+    });
+
+    // Split text into posts (thread support)
+    const posts = splitThreadText(text);
+
+    // Parse media IDs
+    const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
+
+    // Build posts array
+    const basePostsArray = posts.map((postText, index) => {
+      const post = { text: postText };
+      // Attach media only to first post
+      if (index === 0 && mediaIds.length > 0) {
+        post.media_ids = mediaIds;
+      }
+      return post;
+    });
+
+    for (const platform of platformList) {
+      const postsArray = platform === 'x'
+        ? addXContentDisclosures(addQuotePostUrl(basePostsArray, quotePostUrl), xContentDisclosures)
+        : basePostsArray;
+      const platformConfig = {
+        enabled: true,
+        posts: postsArray,
+      };
+
+      // X-specific settings
+      if (platform === 'x' && (parsed['reply-to'] || parsed.community)) {
+        platformConfig.settings = {};
+        if (parsed['reply-to']) {
+          platformConfig.settings.reply_to_url = parsed['reply-to'];
+        }
+        if (parsed.community) {
+          platformConfig.settings.community_id = parsed.community;
+        }
+      }
+
+      platformsObj[platform] = platformConfig;
+    }
+  }
+
   const body = { platforms: platformsObj };
 
   if (parsed.title) {
@@ -1230,22 +1352,39 @@ async function cmdDraftsUpdate(args) {
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
 
-  // Get text content
-  let text = parsed.text;
-  if (parsed.file) {
-    if (!fs.existsSync(parsed.file)) {
-      error(`File not found: ${parsed.file}`);
-    }
-    text = fs.readFileSync(parsed.file, 'utf-8');
+  const body = {};
+  const explicitPlatformList = parsed.platform
+    ? parsePlatformList(parsed.platform)
+    : null;
+
+  if (hasXArticleDraftFlags(parsed) && !explicitPlatformList) {
+    error('X Article flags require --platform x_article');
   }
 
-  const body = {};
+  if (explicitPlatformList) {
+    validateXArticlePlatformUsage(explicitPlatformList, parsed);
+  }
 
-  const shouldUpdatePosts = Boolean(text || quotePostUrl || xContentDisclosures.hasAny);
+  const shouldUpdateArticle = Boolean(
+    explicitPlatformList?.includes(X_ARTICLE_PLATFORM) && hasXArticleDraftFlags(parsed)
+  );
+
+  if (shouldUpdateArticle) {
+    body.platforms = {
+      [X_ARTICLE_PLATFORM]: buildXArticlePlatformConfig(parsed, {
+        requireContent: false,
+      }),
+    };
+  }
+
+  // Get text content for normal post updates only.
+  let text = null;
+  if (!shouldUpdateArticle) {
+    text = getPostTextFromParsed(parsed);
+  }
+
+  const shouldUpdatePosts = Boolean(!shouldUpdateArticle && (text || quotePostUrl || xContentDisclosures.hasAny));
   if (shouldUpdatePosts) {
-    const explicitPlatformList = parsed.platform
-      ? parsed.platform.split(',').map(p => p.trim())
-      : null;
     if (explicitPlatformList) {
       validateXOnlyPostOptions(explicitPlatformList, {
         quotePostUrl,
@@ -1367,7 +1506,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
+    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
   }
 
   const params = new URLSearchParams();
@@ -1401,23 +1540,31 @@ async function cmdCreateDraftAlias(args) {
   const forwarded = [String(socialSetId)];
 
   // Prefer explicit --file / --text, otherwise treat positional args as the draft content.
-  if (Object.prototype.hasOwnProperty.call(parsed, 'file')) {
-    forwarded.push('--file', coerceFlagValueToString(parsed.file, '--file'));
-  } else {
-    let text;
-    if (Object.prototype.hasOwnProperty.call(parsed, 'text')) {
-      text = coerceFlagValueToString(parsed.text, '--text');
+  const canSkipPostText = hasXArticleDraftFlags(parsed)
+    && !hasParsedArg(parsed, 'file')
+    && !hasParsedArg(parsed, 'text')
+    && parsed._positional.length === 0;
+  if (!canSkipPostText) {
+    if (Object.prototype.hasOwnProperty.call(parsed, 'file')) {
+      forwarded.push('--file', coerceFlagValueToString(parsed.file, '--file'));
     } else {
-      if (parsed._positional.length === 0) {
-        error('Draft text is required (provide it as the first argument, or use --text/--file)');
+      let text;
+      if (Object.prototype.hasOwnProperty.call(parsed, 'text')) {
+        text = coerceFlagValueToString(parsed.text, '--text');
+      } else {
+        if (parsed._positional.length === 0) {
+          error('Draft text is required (provide it as the first argument, or use --text/--file)');
+        }
+        text = parsed._positional.join(' ');
       }
-      text = parsed._positional.join(' ');
+      forwarded.push('--text', text);
     }
-    forwarded.push('--text', text);
   }
 
   pushStringFlag(forwarded, parsed, 'platform', '--platform');
   if (parsed.all) forwarded.push('--all');
+  pushStringFlag(forwarded, parsed, 'content-markdown', '--content-markdown');
+  pushStringFlag(forwarded, parsed, 'cover-media-id', '--cover-media-id');
   pushStringFlag(forwarded, parsed, 'media', '--media');
   pushStringFlag(forwarded, parsed, 'title', '--title');
   pushStringFlag(forwarded, parsed, 'schedule', '--schedule');
@@ -1461,6 +1608,8 @@ async function cmdUpdateDraftAlias(args) {
 
   const forwarded = [String(socialSetId), String(draftId)];
   pushStringFlag(forwarded, parsed, 'platform', '--platform');
+  pushStringFlag(forwarded, parsed, 'content-markdown', '--content-markdown');
+  pushStringFlag(forwarded, parsed, 'cover-media-id', '--cover-media-id');
   if (text) forwarded.push('--text', text);
   if (Object.prototype.hasOwnProperty.call(parsed, 'file')) {
     forwarded.push('--file', coerceFlagValueToString(parsed.file, '--file'));
@@ -1580,19 +1729,29 @@ async function cmdCommentsCreate(args) {
 
   const text = getRequiredStringArgFromParsed(parsed, 'text');
   const selectedText = getRequiredStringArgFromParsed(parsed, 'selected-text', ['selected_text']);
-  const postIndexRaw = getRequiredStringArgFromParsed(parsed, 'post-index', ['post_index']);
-  const postIndex = Number.parseInt(postIndexRaw, 10);
-  if (!Number.isInteger(postIndex) || postIndex < 0) {
-    error('--post-index must be a non-negative integer');
-  }
-
   const body = {
-    post_index: postIndex,
     selected_text: selectedText,
     text,
   };
 
   if (parsed.platform) body.platform = parsed.platform;
+  if (parsed.platform === X_ARTICLE_PLATFORM) {
+    const postIndexRaw = getOptionalStringArgFromParsed(parsed, 'post-index', ['post_index']);
+    if (postIndexRaw != null) {
+      const postIndex = Number.parseInt(postIndexRaw, 10);
+      if (!Number.isInteger(postIndex) || postIndex !== 0) {
+        error('--post-index must be 0 when --platform x_article');
+      }
+    }
+  } else {
+    const postIndexRaw = getRequiredStringArgFromParsed(parsed, 'post-index', ['post_index']);
+    const postIndex = Number.parseInt(postIndexRaw, 10);
+    if (!Number.isInteger(postIndex) || postIndex < 0) {
+      error('--post-index must be a non-negative integer');
+    }
+    body.post_index = postIndex;
+  }
+
   if (Object.prototype.hasOwnProperty.call(parsed, 'occurrence')) {
     const occurrence = Number.parseInt(parsed.occurrence, 10);
     if (!Number.isInteger(occurrence) || occurrence < 0) {
@@ -1872,6 +2031,9 @@ USAGE:
 NOTE:
   Commands that take a social_set_id as a positional argument also accept:
     --social-set-id <id>   (or --social_set_id <id>)
+  Global options:
+    --api-base-url <url>                     Override API base URL for this command
+                                             (appends /v2 when omitted)
 
 SETUP:
   setup                                      Interactive setup - saves API key and optional default social set
@@ -1929,10 +2091,13 @@ COMMANDS:
 
   drafts:create [social_set_id] [options]    Create a new draft (uses default if ID omitted)
     --platform <platforms>                   Comma-separated: x,linkedin,threads,bluesky,mastodon
+                                             or standalone x_article
                                              (auto-selects first connected platform if omitted)
-    --all                                    Post to all connected platforms
+    --all                                    Post to all connected post platforms (excludes x_article)
     --text <text>                            Post content (use --- on its own line for threads)
     --file, -f <path>                        Read content from file instead of --text
+    --content-markdown <markdown>            X Article markdown (requires --platform x_article)
+    --cover-media-id <media_id|null>         X Article cover image; use literal null to remove on update
     --media <media_ids>                      Comma-separated media IDs to attach
     --title <title>                          Draft title (internal only)
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
@@ -1946,10 +2111,12 @@ COMMANDS:
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
   drafts:update [social_set_id] <draft_id> [options]  Update a draft
-    --platform <platforms>                   Comma-separated platforms
+    --platform <platforms>                   Comma-separated platforms, or standalone x_article
                                              (preserves draft's existing platforms if omitted)
     --text <text>                            New post content
     --file, -f <path>                        Read content from file instead of --text
+    --content-markdown <markdown>            New X Article markdown (requires --platform x_article)
+    --cover-media-id <media_id|null>         Set X Article cover, or use literal null to remove it
     --media <media_ids>                      Comma-separated media IDs to attach
     --append, -a                             Append to existing thread instead of replacing
     --title <title>                          New draft title
@@ -1993,17 +2160,17 @@ COMMANDS:
 
   comments:list <draft_id> [options]         List comment threads on a draft
     --social-set-id <id>                     Social set (uses default if omitted)
-    --platform <platform>                    Filter by platform: x, linkedin, threads, bluesky, mastodon
+    --platform <platform>                    Filter by platform: x, linkedin, threads, bluesky, mastodon, x_article
     --status <status>                        Filter by: unresolved (default), resolved, all
     --limit <n>                              Max results (default: 10, max: 50)
     --offset <n>                             Skip first N results
 
-  comments:create <draft_id> [options]       Create a new comment thread anchored on a span of a post
+  comments:create <draft_id> [options]       Create a new comment thread anchored on a span
     --social-set-id <id>                     Social set (uses default if omitted)
-    --post-index <n>                         Zero-based index of the post to anchor on (required)
-    --selected-text <text>                   Exact substring of the post's text (required)
+    --post-index <n>                         Zero-based post index (required except for x_article)
+    --selected-text <text>                   Exact substring of post text or visible X Article text
     --text <text>                            Plain-text comment body (required)
-    --platform <platform>                    Required when draft has multiple commentable platforms
+    --platform <platform>                    Required for x_article and multi-platform drafts
     --occurrence <n>                         Zero-based occurrence when selected_text repeats (default: 0)
 
   comments:reply <draft_id> <thread_id> --text <text>
@@ -2089,6 +2256,15 @@ EXAMPLES:
   # Create a tweet with explicit social set ID
   ./typefully.js drafts:create 123 --text "Hello world!"
 
+  # Create an X Article (standalone platform)
+  ./typefully.js drafts:create 123 --platform x_article --content-markdown "# Article Title\n\nLong-form article body..."
+
+  # Create an X Article with a cover image
+  ./typefully.js drafts:create 123 --platform x_article --content-markdown "# Article Title\n\nBody..." --cover-media-id media_123
+
+  # Remove an X Article cover image
+  ./typefully.js drafts:update 123 456 --platform x_article --cover-media-id null
+
   # Create a cross-platform post (specific platforms)
   ./typefully.js drafts:create --platform x,linkedin --text "Big announcement!"
 
@@ -2154,6 +2330,9 @@ EXAMPLES:
 
   # Create a comment thread anchored on the first post
   ./typefully.js comments:create 456 --post-index 0 --selected-text "exciting news" --text "Tighten this — passive."
+
+  # Create a comment thread anchored on visible X Article text
+  ./typefully.js comments:create 456 --platform x_article --selected-text "article phrase" --text "Clarify this section."
 
   # Reply to a thread
   ./typefully.js comments:reply 456 7e2a... --text "Agreed, will revise."
@@ -2224,7 +2403,7 @@ const COMMANDS = {
 };
 
 async function main() {
-  const args = process.argv.slice(2);
+  const args = extractGlobalArgs(process.argv.slice(2));
   const command = args[0] || 'help';
   const commandArgs = args.slice(1);
 

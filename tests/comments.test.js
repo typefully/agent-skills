@@ -127,6 +127,88 @@ describe('comments', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('comments:create supports X Article comments without post_index', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey,
+  }) => {
+    server.expect('POST', '/v2/social-sets/9/drafts/d1/comment-threads', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.deepEqual(req.bodyJson, {
+          platform: 'x_article',
+          selected_text: 'article phrase',
+          text: 'Clarify this section.',
+          occurrence: 2,
+        });
+      },
+      json: { id: 'article-thread' },
+    });
+    const result = await runCli(
+      [
+        'comments:create', 'd1',
+        '--social-set-id', '9',
+        '--platform', 'x_article',
+        '--selected-text', 'article phrase',
+        '--text', 'Clarify this section.',
+        '--occurrence', '2',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } },
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'article-thread' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('comments:create omits post_index for X Article comments even when post_index is 0', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey,
+  }) => {
+    server.expect('POST', '/v2/social-sets/9/drafts/d1/comment-threads', {
+      assert: (req) => {
+        authAssertFactory(apiKey)(req);
+        assert.deepEqual(req.bodyJson, {
+          platform: 'x_article',
+          selected_text: 'article phrase',
+          text: 'Clarify this section.',
+        });
+      },
+      json: { id: 'article-thread' },
+    });
+    const result = await runCli(
+      [
+        'comments:create', 'd1',
+        '--social-set-id', '9',
+        '--platform', 'x_article',
+        '--post-index', '0',
+        '--selected-text', 'article phrase',
+        '--text', 'Clarify this section.',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } },
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'article-thread' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('comments:create rejects nonzero post_index for X Article comments', withCliHarness(async ({
+    sandbox, server, baseUrl,
+  }) => {
+    const result = await runCli(
+      [
+        'comments:create', 'd1',
+        '--social-set-id', '9',
+        '--platform', 'x_article',
+        '--post-index', '1',
+        '--selected-text', 'article phrase',
+        '--text', 'Clarify this section.',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: 'typ_test_key' } },
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--post-index must be 0 when --platform x_article',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
   it('comments:create errors when --text is missing', withCliHarness(async ({
     sandbox, server, baseUrl,
   }) => {
