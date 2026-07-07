@@ -8,7 +8,8 @@ This repository contains AI agent skills for Typefully - markdown files that giv
 
 ## Repository Structure
 
-- `skills/typefully/SKILL.md` - The main skill definition file with frontmatter metadata and usage instructions
+- `skills/typefully/SKILL.md` - The main skill definition file with frontmatter metadata, the every-session workflow, and the full command reference. Keep it focused; move occasional or platform-specific detail into `references/`.
+- `skills/typefully/references/` - On-demand reference guides linked from SKILL.md: `setup.md`, `comments.md`, `local-development.md`, and `platforms/` (`x.md`, `linkedin.md`, `x-articles.md`). Put setup, comment-workflow, local-dev, and platform-specific instructions here so they load only when needed.
 - `skills/typefully/CHANGELOG.md` - User-facing changelog for the Typefully skill/CLI
 - `skills/typefully/scripts/typefully.js` - JavaScript CLI for the Typefully API v2 (zero dependencies, Node.js 18+)
 - `.claude-plugin/marketplace.json` - Claude Code plugin marketplace configuration

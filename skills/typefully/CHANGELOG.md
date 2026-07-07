@@ -8,6 +8,7 @@ The format is based on Keep a Changelog.
 
 ### Added
 
+- `--api-base-url <url>` global CLI option to override the API base URL for one command; `/v2` is appended when omitted.
 - Per-draft comment-thread CRUD:
   - `comments:list <draft_id>` — list threads with `--platform`, `--status` (`unresolved` / `resolved` / `all`), `--limit`, `--offset` filters.
   - `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` — create a thread anchored on a span. Optional `--platform`, `--occurrence`.
@@ -27,6 +28,20 @@ The format is based on Keep a Changelog.
 
 - `analytics:posts:list` now matches the backend analytics default: replies are excluded unless you explicitly pass `--include-replies`.
 - Analytics docs and examples now explain X post analytics, X follower analytics, and the explicit reply-inclusion workflow.
+
+## [2026-07-07]
+
+### Added
+
+- X Article draft support via `drafts:create` and `drafts:update` with `--platform x_article`.
+- `--content-markdown <markdown>` for X Article content.
+- `--cover-media-id <media_id|null>` for X Article cover images; pass the literal `null` on update to remove an existing cover.
+- `X_ARTICLES.md` guide with detailed X Article payload examples, supported markdown blocks, embeds, covers, and comment workflows.
+- `comments:create --platform x_article --selected-text "..." --text "..."` for comments anchored on visible X Article text without `--post-index`.
+
+### Changed
+
+- `--all` remains limited to connected post platforms and does not include standalone X Articles.
 
 ## [2026-03-17]
 

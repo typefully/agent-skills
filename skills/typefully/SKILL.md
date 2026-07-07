@@ -4,378 +4,202 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-05-05
+last-updated: 2026-07-07
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
 # Typefully Skill
 
-Create, schedule, and publish social media content across multiple platforms using [Typefully](https://typefully.com).
+Create, schedule, and publish social media content across X, LinkedIn, Threads, Bluesky, and Mastodon using [Typefully](https://typefully.com). Run everything through `./scripts/typefully.js` (Node.js 18+, no dependencies). All commands output JSON.
 
-> **Freshness check**: If more than 30 days have passed since the `last-updated` date above, inform the user that this skill may be outdated and point them to the update options below.
+> **Script paths** below are relative to this skill's directory. Resolve them based on where the skill is installed.
+>
+> **Freshness check**: If more than 30 days have passed since the `last-updated` date above, tell the user the skill may be outdated and point them to the update methods in [`references/setup.md`](references/setup.md).
+>
+> **Missing API key**: If the CLI returns **"API key not found"**, tell the user to run `./scripts/typefully.js setup` themselves and stop — do not hunt for credentials. See [`references/setup.md`](references/setup.md).
 
-## Keeping This Skill Updated
+## Reference guides
 
-**Source**: [github.com/typefully/agent-skills](https://github.com/typefully/agent-skills)
-**API docs**: [typefully.com/docs/api](https://typefully.com/docs/api)
+Load these only when the task needs them:
 
-Update methods by installation type:
-
-| Installation | How to update |
-|--------------|---------------|
-| CLI (`npx skills`) | `npx skills update` |
-| Claude Code plugin | `/plugin update typefully@typefully-skills` |
-| Cursor | Remote rules auto-sync from GitHub |
-| Manual | Pull latest from repo or re-copy `skills/typefully/` |
-
-API changes ship independently—updating the skill ensures you have the latest commands and workflows.
-
-## Setup
-
-Before using this skill, ensure:
-
-1. **API Key**: Run the setup command to configure your API key securely
-   - Get your key at https://typefully.com/?settings=api
-   - Run: `<skill-path>/scripts/typefully.js setup` (where `<skill-path>` is the directory containing this SKILL.md)
-   - Or set environment variable: `export TYPEFULLY_API_KEY=your_key`
-
-2. **Requirements**: Node.js 18+ (for built-in fetch API). No other dependencies needed.
-
-**Config priority** (highest to lowest):
-1. `TYPEFULLY_API_KEY` environment variable
-2. `./.typefully/config.json` (project-local, in user's working directory)
-3. `~/.config/typefully/config.json` (user-global)
-
-### Handling "API key not found" errors
-
-**CRITICAL**: When you receive an "API key not found" error from the CLI:
-
-1. **Tell the user to run the setup command** - The setup is interactive and requires user input, so you cannot run it on their behalf. Recommend they run it themselves, using the correct path based on where this skill was loaded:
-   ```bash
-   <skill-path>/scripts/typefully.js setup
-   ```
-
-2. **Stop and wait** - After telling the user to run setup, **do not continue with the task**. You cannot create drafts, upload media, or perform any API operations without a valid API key. Wait for the user to complete setup and confirm before proceeding.
-
-3. **DO NOT** attempt any of the following:
-   - Searching for API keys in macOS Keychain, `.env` files, or other locations
-   - Grepping through config files or directories
-   - Looking in the user's Trash or other system folders
-   - Constructing complex shell commands to find credentials
-   - Drafting content or preparing posts before setup is complete
-
-The setup command will interactively guide the user through configuration. Trust the CLI's error messages and follow their instructions.
-
-> **Note for agents**: All script paths in this document (e.g., `./scripts/typefully.js`) are relative to the skill directory where this SKILL.md file is located. Resolve them accordingly based on where the skill is installed.
-
-## Social Sets
-
-The Typefully API uses the term "social set" to refer to what users commonly call an "account". A social set contains the connected social media platforms (X, LinkedIn, Threads, etc.) for a single identity.
-
-**The CLI supports a default social set** - once configured, most commands work without specifying the social_set_id.
-
-**You can pass the social set either way**:
-- Positional: `drafts:list 123`
-- Flag: `drafts:list --social-set-id 123` (also supports `--social_set_id`)
-
-When determining which social set to use:
-
-1. **Check for a configured default first** - Run `config:show` to see if a default is already set:
-   ```bash
-   ./scripts/typefully.js config:show
-   ```
-   If `default_social_set` is configured, the CLI uses it automatically when you omit the social_set_id.
-
-2. **Check project context** - Look for configuration in project files like `CLAUDE.md` or `AGENTS.md`:
-
-   ```markdown
-   ## Typefully
-   Default social set ID: 12345
-   ```
-
-3. **Single social set shortcut** - If the user only has one social set and no default is configured, use it automatically
-
-4. **Multiple social sets, no default** - Ask the user which to use, then **offer to save their choice as the default**:
-   ```bash
-   ./scripts/typefully.js config:set-default
-   ```
-   This command lists available social sets and saves the choice to the config file.
-
-5. **Reuse previously resolved social set** - If determined earlier in the session, use it without asking again
-
-## Common Actions
-
-| User says... | Action |
-|--------------|--------|
-| "Draft a tweet about X" | `drafts:create --text "..."` (uses default social set) |
-| "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
-| "Mention a company on LinkedIn" | `linkedin:organizations:resolve --organization-url "<linkedin_url>"` then use returned `mention_text` in `drafts:create` |
-| "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
-| "X thread + LinkedIn post" (different content) | Create one draft, then `drafts:update` to add platform (see [Publishing to Multiple Platforms](#publishing-to-multiple-platforms)) |
-| "What's scheduled?" | `drafts:list --status scheduled` |
-| "Show my recent posts" | `drafts:list --status published` |
-| "Schedule this for tomorrow" | `drafts:create ... --schedule "2025-01-21T09:00:00Z"` |
-| "Post this now" | `drafts:create ... --schedule now` or `drafts:publish <draft_id> --use-default` |
-| "Add notes/ideas to the draft" | `drafts:create ... --scratchpad "Your notes here"` |
-| "Check available tags" | `tags:list` |
-| "Check my publishing quota" | `social-sets:get` and inspect `publishing_quota` |
-| "Show my X post analytics for last week" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
-| "Show my X post analytics including replies" | `analytics:posts:list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --include-replies` |
-| "Show my X follower growth" | `analytics:followers:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
-| "Show my queue for next week" | `queue:get --start-date YYYY-MM-DD --end-date YYYY-MM-DD` |
-| "List comments on this draft" | `comments:list <draft_id>` |
-| "Comment on the phrase 'exciting news'" | `comments:create <draft_id> --post-index 0 --selected-text "exciting news" --text "..."` |
-| "Reply to that comment thread" | `comments:reply <draft_id> <thread_id> --text "..."` |
-| "Resolve / delete a comment thread" | `comments:resolve <draft_id> <thread_id>` / `comments:delete <draft_id> <thread_id>` |
-| "Get the draft without comment annotations" | `drafts:get <draft_id> --exclude-comment-markers` |
-
-## Workflow
-
-Follow this workflow when creating posts:
-
-1. **Check if a default social set is configured**:
-   ```bash
-   ./scripts/typefully.js config:show
-   ```
-   If `default_social_set` shows an ID, skip to step 3.
-
-2. **If no default, list social sets** to find available options:
-   ```bash
-   ./scripts/typefully.js social-sets:list
-   ```
-   If multiple exist, ask the user which to use and offer to set it as default:
-   ```bash
-   ./scripts/typefully.js config:set-default
-   ```
-
-3. **Create drafts** (social_set_id is optional if default is configured):
-   ```bash
-   ./scripts/typefully.js drafts:create --text "Your post"
-   ```
-   Note: If `--platform` is omitted, the first connected platform is auto-selected.
-
-   **For multi-platform posts**: See [Publishing to Multiple Platforms](#publishing-to-multiple-platforms) — always use a single draft, even when content differs per platform.
-
-4. **Schedule or publish** as needed
-
-## Working with Tags
-
-Tags help organize drafts within Typefully. **Always check existing tags before creating new ones**:
-
-1. **List existing tags first**:
-   ```bash
-   ./scripts/typefully.js tags:list
-   ```
-
-2. **Use existing tags when available** - if a tag with the desired name already exists, use it directly when creating drafts:
-   ```bash
-   ./scripts/typefully.js drafts:create --text "..." --tags existing-tag-name
-   ```
-
-3. **Only create new tags if needed** - if the tag doesn't exist, create it:
-   ```bash
-   ./scripts/typefully.js tags:create --name "New Tag"
-   ```
-
-**Important**: Tags are scoped to each social set. A tag created for one social set won't appear in another.
-
-## Publishing to Multiple Platforms
-
-If a single draft needs to be created for different platforms, you need to make sure to create **a single draft** and not multiple drafts.
-
-When the content is the same across platforms, create a single draft with multiple platforms:
-
-```bash
-# Specific platforms
-./scripts/typefully.js drafts:create --platform x,linkedin --text "Big announcement!"
-
-# All connected platforms
-./scripts/typefully.js drafts:create --all --text "Posting everywhere!"
-```
-
-**IMPORTANT**: When content should be tailored (e.g., X thread with a LinkedIn post version), **still use a single draft** — create with one platform first, then update to add the other:
-
-```bash
-# 1. Create draft with the primary platform first
-./scripts/typefully.js drafts:create --platform linkedin --text "Excited to share our new feature..."
-# Returns: { "id": "draft-123", ... }
-
-# 2. Update the same draft to add another platform with different content
-./scripts/typefully.js drafts:update draft-123 --platform x --text "🧵 Thread time!
+| Guide | Use when you need to... |
+|-------|-------------------------|
+| [`references/setup.md`](references/setup.md) | Configure the API key, fix an "API key not found" error, set up CI, or check whether the skill is up to date |
+| [`references/comments.md`](references/comments.md) | Add, reply to, resolve, or delete comments on a draft, or edit a draft that already has comments |
+| [`references/platforms/x.md`](references/platforms/x.md) | Pull X (formerly Twitter) analytics, quote or reply to a post, post to a community, or add disclosure labels |
+| [`references/platforms/linkedin.md`](references/platforms/linkedin.md) | Mention a company or person on LinkedIn |
+| [`references/platforms/x-articles.md`](references/platforms/x-articles.md) | Write or edit a long-form X Article (standalone platform) |
 
 ---
 
-Here's what we shipped and why it matters..." --use-default
-```
+## 1. Choose a social set
 
-So make sure to NEVER create multiple drafts unless the user explicitly wants separate drafts for each platform.
+A "social set" is what users call an "account" — the connected platforms for one identity. Most commands work without a `social_set_id` once a default is configured. Pass it positionally (`drafts:list 123`) or as `--social-set-id 123`.
 
-## LinkedIn Mentions
+To decide which social set to use:
 
-LinkedIn mentions are supported via text syntax inside post content:
+1. Run `config:show`. If `default_social_set` is set, the CLI uses it automatically — proceed.
+2. Otherwise run `social-sets:list`. If only one exists, use it.
+3. If multiple exist with no default, ask the user, then offer to save it: `config:set-default`.
+4. Reuse a social set already resolved earlier in the session without asking again.
 
-```text
-@[Company Name](urn:li:organization:123456)
-```
+---
 
-Use the resolver command to convert a public LinkedIn organization URL into ready-to-paste mention syntax:
-
-```bash
-# Resolve a LinkedIn URL into mention metadata
-./scripts/typefully.js linkedin:organizations:resolve --organization-url "https://www.linkedin.com/company/typefullycom/"
-# Returns mention_text like: @[Typefully](urn:li:organization:86779668)
-```
-
-Then include that `mention_text` in your LinkedIn draft text:
+## 2. Create drafts
 
 ```bash
-./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
+./scripts/typefully.js drafts:create --text "Your post"
 ```
 
-## Comments on Drafts
+- If `--platform` is omitted, the first connected platform is auto-selected. Named platforms: `x`, `linkedin`, `threads`, `bluesky`, `mastodon`, `x_article`.
+- Split a thread with `---` on its own line.
+- Attach media with `--media`, tags with `--tags`, internal notes with `--scratchpad`, an internal name with `--title`.
+- Read content from a file with `--file ./post.txt` instead of `--text`.
 
-Drafts can have comment threads anchored to a selected span or to a whole paragraph. `drafts:get` returns `posts[*].text` with inline `<typ:comment-thread>` anchors by default so agents can preserve those anchors during edits.
+### One draft per post — always
 
-**Core rules for agents:**
+For the same content on several platforms, pass multiple platforms to a **single** draft:
 
-1. **Preserve every comment anchor when patching draft text.** Span anchors wrap selected text; self-closing anchors at the start of a paragraph are live comments on the whole following paragraph, not empty/resolved comments. When rewriting, move each anchor to the most semantically equivalent span or paragraph. Do not silently strip or drop anchors.
-2. **Do not resolve or delete comments without explicit user instruction.** After editing text that may address feedback, ask whether to resolve the specific thread(s). Never infer that "clean up", "tidy", or "looks addressed" means resolve/delete.
-3. **Talk to users about comments, not marker syntax.** Describe anchors in plain English, such as "comment on the word 'constraint'" or "comment on the paragraph starting with ...". Only mention marker syntax when explaining marker-related API errors or when the user asks how anchors work.
+```bash
+./scripts/typefully.js drafts:create --platform x,linkedin --text "Big announcement!"
+./scripts/typefully.js drafts:create --all --text "Posting everywhere!"   # all connected platforms
+```
 
-Default edit flow for drafts with comments: get the draft with anchors enabled, rewrite while preserving/repositioning every anchor, patch with `drafts:update --text ...` without force flags, then ask whether to resolve any addressed comments. Use `comments:list <draft_id> --status all` when you need thread ids, comment bodies, authors, or resolved status.
+When content should differ per platform (e.g. an X thread plus a tailored LinkedIn post), **still use one draft** — create with the first platform, then `drafts:update` to add another with different content:
 
-Use `drafts:get --exclude-comment-markers` only for display, LLM context, export, or preview text that will not be patched back.
+```bash
+./scripts/typefully.js drafts:create --platform linkedin --text "Excited to share..."   # -> id draft-123
+./scripts/typefully.js drafts:update draft-123 --platform x --text "🧵 Thread time!" --use-default
+```
 
-### Force Overwrite And Accepting Comments
+Never create multiple drafts unless the user explicitly wants separate drafts per platform.
 
-`--force-overwrite-comments` is destructive: every unresolved thread whose anchor is missing from the submitted text is resolved server-side and stripped, including unrelated threads. Default: do not use it. If a PATCH fails because anchors do not match, fetch the draft with anchors, preserve every `<typ:comment-thread>` anchor, and patch again without force.
+> `--all` excludes `x_article`. X Articles are standalone and cannot be combined with any other platform — see [`references/platforms/x-articles.md`](references/platforms/x-articles.md).
 
-Only use `--force-overwrite-comments` when anchors truly cannot be preserved, such as a user-requested wholesale rewrite or an anchor with no reasonable new location. Before using it, run `comments:list <draft_id> --status unresolved`, tell the user which threads will be resolved and stripped (selected text + top comment), state that this cannot be undone via the API, and wait for an explicit "yes, proceed". Do not confirm and PATCH in the same turn.
+### Scratchpad notes
 
-When the user asks to accept/apply/address a comment, fetch without `--exclude-comment-markers`, identify the target thread, edit only that anchor's text (or the paragraph after a self-closing paragraph anchor), preserve every other anchor and unrelated text, then `drafts:update` without force flags. Ask before resolving the thread. If feedback is open-ended, propose wording or ask instead of inventing silently. For "accept all comments", batch only changes whose anchors can all be preserved.
+When the user asks to add notes, ideas, or context to a draft, use `--scratchpad` — **do NOT write to local files.** Scratchpad notes attach to the draft in Typefully, are visible in the UI, stay private, and are never published.
 
-| Command | Purpose |
-|---------|---------|
-| `comments:list <draft_id>` | List comment threads. Filters: `--platform`, `--status` (`unresolved` default / `resolved` / `all`), `--limit`, `--offset` |
-| `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` | Create a comment thread anchored on exact selected text. Optional: `--platform`, `--occurrence` |
-| `comments:reply <draft_id> <thread_id> --text "..."` | Add a reply to a thread |
-| `comments:resolve <draft_id> <thread_id>` | Resolve a thread, only after explicit user confirmation |
-| `comments:update <draft_id> <thread_id> <comment_id> --text "..."` | Edit a comment's text; comment-author only |
-| `comments:delete <draft_id> <thread_id> [comment_id]` | Delete a thread or one comment, only after explicit user instruction |
+```bash
+./scripts/typefully.js drafts:create --text "My post" --scratchpad "Ideas: 1) Add stats 2) Include quote"
+```
 
-`comments:create` requires `selected_text` to exactly match the post text. If it repeats, pass zero-based `--occurrence`; for LinkedIn mentions, select the entire `@[Name](urn:li:...)` substring or stay outside it. Pass `--platform` only when the draft has multiple commentable platforms.
+---
 
-## Commands Reference
+## 3. Schedule & publish
 
-### User & Social Sets
+```bash
+./scripts/typefully.js drafts:create --text "..." --schedule next-free-slot   # or an ISO time, or "now"
+./scripts/typefully.js drafts:schedule <draft_id> --time next-free-slot --use-default
+./scripts/typefully.js drafts:publish <draft_id> --use-default
+```
+
+- `next-free-slot` lets Typefully pick the optimal time.
+- **Publishing is irreversible and public** — unless the user says "publish now" / "post immediately", confirm first. Creating a draft is safe.
+- Single-arg commands require `--use-default` when a default social set is configured (see the [safety note](#commands) below).
+
+---
+
+## Common actions
+
+| User says... | Action |
+|--------------|--------|
+| "Draft a tweet about X" | `drafts:create --text "..."` |
+| "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
+| "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
+| "X thread + tailored LinkedIn post" | One draft, then `drafts:update` to add the platform |
+| "What's scheduled?" / "Recent posts?" | `drafts:list --status scheduled` / `--status published` |
+| "Schedule this for tomorrow" | `drafts:create --text "..." --schedule "<ISO time>"` |
+| "Post this now" | `drafts:create --text "..." --schedule now` or `drafts:publish <id> --use-default` |
+| "Check available tags" | `tags:list` |
+| "Check my publishing quota" | `social-sets:get` → `publishing_quota` |
+| "Draft an X Article" | See [`references/platforms/x-articles.md`](references/platforms/x-articles.md) |
+| "Mention a company on LinkedIn" | See [`references/platforms/linkedin.md`](references/platforms/linkedin.md) |
+| "Show my X analytics / followers" | See [`references/platforms/x.md`](references/platforms/x.md) |
+| "Comment on / resolve a comment" | See [`references/comments.md`](references/comments.md) |
+
+---
+
+## Commands
+
+All commands output JSON. Every `[social_set_id]` is optional and falls back to the configured default.
+
+> **Safety note**: `drafts:get`, `drafts:update`, `drafts:delete`, `drafts:schedule`, and `drafts:publish` require `--use-default` when you pass a single argument (the draft_id) while a default social set is configured.
+
+Platform- and workflow-specific commands live in their guides: [`platforms/x.md`](references/platforms/x.md) (analytics, quotes, replies, communities, disclosures), [`platforms/linkedin.md`](references/platforms/linkedin.md) (mentions), [`platforms/x-articles.md`](references/platforms/x-articles.md), [`comments.md`](references/comments.md), and [`setup.md`](references/setup.md).
+
+### User & social sets
 
 | Command | Description |
 |---------|-------------|
 | `me:get` | Get authenticated user info |
 | `social-sets:list` | List all social sets you can access |
-| `social-sets:get <id>` | Get social set details including connected platforms and `publishing_quota` |
-| `linkedin:organizations:resolve [social_set_id] --organization-url <url>` | Resolve LinkedIn company/school URL into mention metadata (`mention_text`, `urn`) |
+| `social-sets:get <id>` | Social set details including connected platforms and `publishing_quota` |
 
-`social-sets:get` returns a `publishing_quota` object when available:
-- `used` - published drafts already counted in the current quota window
-- `remaining` - remaining publish slots, or `"unlimited"`
-- `resets_at` - when the current quota window resets
-
-Use it before publishing/scheduling when the user asks about remaining posting capacity or when a publish/schedule request fails with quota copy.
-
-### Analytics
-
-All analytics commands support an optional `[social_set_id]` - if omitted, the configured default is used.
-
-The public API currently supports **X analytics only** on these endpoints. The CLI defaults `--platform` to `x`, so you can usually omit it.
-
-Replies are now **excluded by default** so the result set matches the main published-post view more closely. Add `--include-replies` when you explicitly want reply posts included.
-
-Analytics responses return post-level metrics for the requested inclusive date range, including:
-- `impressions`
-- engagement totals and breakdowns like `likes`, `comments`, `shares`, `quotes`, `saves`, `profile_clicks`, and `link_clicks`
-
-Follower analytics returns `current_followers_count` plus daily `data` points with `date` and `followers_count`. If you omit dates, the API returns the default recent range.
-
-| Command | Description |
-|---------|-------------|
-| `analytics:posts:list [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | List X posts with normalized analytics metrics for an inclusive date range |
-| `analytics:posts:list ... --start_date <YYYY-MM-DD> --end_date <YYYY-MM-DD>` | Snake case aliases for date flags (copied from API docs) |
-| `analytics:posts:list ... --include-replies` | Include X replies in the results (excluded by default) |
-| `analytics:posts:list ... --include_replies` | Snake case alias for the include-replies flag |
-| `analytics:posts:list ... --limit 100 --offset 25` | Paginate through results |
-| `analytics:posts:list ... --platform x` | Explicitly request X analytics (currently the only supported platform) |
-| `analytics:followers:get [social_set_id]` | Get X follower counts for the API default date range |
-| `analytics:followers:get ... --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Get X follower counts for an inclusive date range |
-| `analytics:followers:get ... --start_date <YYYY-MM-DD> --end_date <YYYY-MM-DD>` | Snake case aliases for date flags |
-| `analytics:followers:get ... --platform x` | Explicitly request X followers analytics (currently the only supported platform) |
+`social-sets:get` returns a `publishing_quota` object when available: `used`, `remaining` (or `"unlimited"`), and `resets_at`. Check it before publishing/scheduling when the user asks about capacity or when a publish/schedule fails with quota copy.
 
 ### Drafts
 
-All drafts commands support an optional `[social_set_id]` - if omitted, the configured default is used.
-**Safety note**: For commands that take `[social_set_id] <draft_id>`, if you pass only a single argument (the draft_id) while a default social set is configured, you must add `--use-default` to confirm intent.
-
-When updating a draft that has comments, preserve anchors from `drafts:get` in the text sent to `drafts:update`. `--exclude-comment-markers` is display-only. `--force-overwrite-comments` is a destructive last resort that requires explicit user confirmation; see [Comments on Drafts](#comments-on-drafts).
+Every draft command accepts an optional leading `[social_set_id]` that falls back to the configured default. The four base commands:
 
 | Command | Description |
 |---------|-------------|
-| `drafts:list [social_set_id]` | List drafts (add `--status scheduled` to filter, `--sort` to order) |
-| `drafts:get [social_set_id] <draft_id>` | Get a specific draft with full content (single-arg requires `--use-default` if a default is configured) |
-| `drafts:get ... --exclude-comment-markers` | Render `posts[*].text` without comment anchors (read-only / display use only) |
-| `drafts:create [social_set_id] --text "..."` | Create a new draft (auto-selects platform) |
-| `drafts:create [social_set_id] --platform x --text "..."` | Create a draft for specific platform(s) |
-| `drafts:create [social_set_id] --all --text "..."` | Create a draft for all connected platforms |
-| `drafts:create [social_set_id] --file <path>` | Create draft from file content |
-| `drafts:create ... --media <media_ids>` | Create draft with attached media |
-| `drafts:create ... --reply-to <url>` | Reply to an existing X post |
-| `drafts:create ... --community <id>` | Post to an X community |
-| `drafts:create ... --quote-post-url <url>` | Quote an existing X post URL |
-| `drafts:create ... --paid-partnership` | Label X post(s) as paid partnership |
-| `drafts:create ... --made-with-ai` | Label X post(s) as made with AI |
-| `drafts:create ... --share` | Generate a public share URL for the draft |
-| `drafts:create ... --scratchpad "..."` | Add internal notes/scratchpad to the draft |
-| `drafts:update [social_set_id] <draft_id> --text "..."` | Update an existing draft (single-arg requires `--use-default` if a default is configured) |
-| `drafts:update ... --quote-post-url <url>` | Update X post(s) in a draft to quote an existing post URL |
-| `drafts:update ... --paid-partnership` | Label existing or updated X post(s) as paid partnership |
-| `drafts:update ... --made-with-ai` | Label existing or updated X post(s) as made with AI |
-| `drafts:update [social_set_id] <draft_id> --tags "tag1,tag2"` | Update tags on an existing draft (content unchanged) |
-| `drafts:update ... --share` | Generate a public share URL for the draft |
-| `drafts:update ... --scratchpad "..."` | Update internal notes/scratchpad |
-| `drafts:update [social_set_id] <draft_id> --append --text "..."` | Append to existing thread |
-| `drafts:update ... --exclude-comment-markers` | Render the response without comment anchors (display only; request validation still applies) |
-| `drafts:update ... --force-overwrite-comments` | Destructive last resort; auto-resolves missing-anchor threads and requires explicit user confirmation first |
+| `drafts:list [social_set_id]` | List drafts. Filter with `--status scheduled\|published\|...`, order with `--sort` |
+| `drafts:get [social_set_id] <draft_id>` | Get a draft with full content. Add `--exclude-comment-markers` to render `posts[*].text` without comment anchors (display only) |
+| `drafts:create [social_set_id] --text "<post text>"` | Create a draft (auto-selects platform if `--platform` omitted) |
+| `drafts:update [social_set_id] <draft_id> --text "<post text>"` | Replace a draft's content |
 
-### Scheduling & Publishing
+Add any of these flags to a `drafts:create` or `drafts:update` command. The **Applies to** column shows where each is valid:
 
-**Safety note**: These commands require `--use-default` when using the default social set with a single argument (to prevent accidental operations from ambiguous syntax).
+| Flag | Effect | Applies to |
+|------|--------|-----------|
+| `--platform x,linkedin` | Target specific platform(s), comma-separated | create, update |
+| `--all` | All connected platforms (excludes `x_article`) | create |
+| `--file <path>` | Read content from a file instead of `--text` | create, update |
+| `--append --text "<text>"` | Append to an existing thread | update |
+| `--media <media_ids>` | Attach media (comma-separated) | create, update |
+| `--tags "tag1,tag2"` | Set tags (content stays unchanged if this is the only change on update) | create, update |
+| `--title "<internal title>"` | Internal draft title (not posted) | create, update |
+| `--scratchpad "<notes>"` | Attach internal notes (see [Scratchpad notes](#scratchpad-notes)) | create, update |
+| `--share` | Generate a public share URL | create, update |
+| `--schedule <iso\|next-free-slot\|now>` | Schedule or reschedule the draft | create, update |
+| `--exclude-comment-markers` | Render response without anchors (display only; validation still applies) | update |
+| `--force-overwrite-comments` | Destructive last resort — see [`comments.md`](references/comments.md) | update |
+
+For example, combine the base command with flags like this:
+
+```bash
+./scripts/typefully.js drafts:create --text "Launch day!" --platform x,linkedin --tags product --schedule next-free-slot
+./scripts/typefully.js drafts:update 456 --text "Revised copy" --media abc-123 --use-default
+```
+
+> X-only draft flags (`--reply-to`, `--quote-post-url`, `--community`, `--paid-partnership`, `--made-with-ai`): see [`platforms/x.md`](references/platforms/x.md). X Article flags (`--content-markdown`, `--cover-media-id`): see [`platforms/x-articles.md`](references/platforms/x-articles.md).
+
+### Scheduling & publishing
+
+Single-arg forms require `--use-default` when a default social set is configured.
 
 | Command | Description |
 |---------|-------------|
-| `drafts:delete <social_set_id> <draft_id>` | Delete a draft (explicit IDs) |
-| `drafts:delete <draft_id> --use-default` | Delete using default social set |
-| `drafts:schedule <social_set_id> <draft_id> --time next-free-slot` | Schedule to next available slot |
-| `drafts:schedule <draft_id> --time next-free-slot --use-default` | Schedule using default social set |
+| `drafts:schedule <social_set_id> <draft_id> --time <iso\|next-free-slot>` | Schedule to a time or the next available slot |
 | `drafts:publish <social_set_id> <draft_id>` | Publish immediately |
-| `drafts:publish <draft_id> --use-default` | Publish using default social set |
+| `drafts:delete <social_set_id> <draft_id>` | Delete a draft |
 
 ### Queue
 
-All queue commands support an optional `[social_set_id]` - if omitted, the configured default is used.
-
-The queue is a **social-set-specific timeline** made of:
-- Queue slots generated from that social set's queue schedule
-- Scheduled drafts/posts that belong to that same social set
-
-Use `queue:get` when the user asks what is already scheduled (or free) for a given account in a date range.
+The queue is a **social-set-specific timeline**: free queue slots (from the social set's queue schedule) plus scheduled drafts/posts for that same social set. Use `queue:get` when the user asks what is scheduled or free for an account in a date range.
 
 | Command | Description |
 |---------|-------------|
-| `queue:get [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Get the queue timeline for one social set: free queue slots plus scheduled drafts/posts in a date range |
-| `queue:get ... --start_date <YYYY-MM-DD> --end_date <YYYY-MM-DD>` | Snake case aliases for date flags (copied from API docs) |
+| `queue:get [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Queue timeline: free slots + scheduled drafts/posts in a date range |
 | `queue:schedule:get [social_set_id]` | Get queue schedule rules |
 | `queue:schedule:put [social_set_id] --rules '[{"h":9,"m":30,"days":["mon","wed","fri"]}]'` | Replace queue schedule rules (full replacement) |
 
+Snake-case date aliases (`--start_date`, `--end_date`) are accepted.
+
 ### Tags
+
+Tags are scoped per social set — a tag in one social set doesn't appear in another. Check existing tags before creating.
 
 | Command | Description |
 |---------|-------------|
@@ -386,274 +210,69 @@ Use `queue:get` when the user asks what is already scheduled (or free) for a giv
 
 | Command | Description |
 |---------|-------------|
-| `media:upload [social_set_id] <file_path>` | Upload media, wait for processing, return ready media_id |
-| `media:upload ... --no-wait` | Upload and return immediately (use media:status to poll) |
-| `media:upload ... --timeout <seconds>` | Set custom timeout (default: 60) |
-| `media:status [social_set_id] <media_id>` | Check media upload status |
+| `media:upload [social_set_id] <file_path>` | Upload media, wait for processing, return ready `media_id` |
+| `media:upload ... --no-wait` | Upload and return immediately (poll with `media:status`) |
+| `media:upload ... --timeout <seconds>` | Custom processing timeout (default 60) |
+| `media:status [social_set_id] <media_id>` | Check upload status |
 
-### Setup & Configuration
+### Examples
 
-| Command | Description |
-|---------|-------------|
-| `setup` | Interactive setup - prompts for API key, storage location, and default social set |
-| `setup --key <key> --location <global\|local>` | Non-interactive setup for scripts/CI (auto-selects default if only one social set) |
-| `setup --key <key> --default-social-set <id>` | Non-interactive setup with explicit default social set |
-| `setup --key <key> --no-default` | Non-interactive setup, skip default social set selection |
-| `config:show` | Show current config, API key source, and default social set |
-| `config:set-default [social_set_id]` | Set default social set (interactive if ID omitted) |
-
-## Examples
-
-### Set up default social set
 ```bash
-# Check current config
-./scripts/typefully.js config:show
-
-# Set default (interactive - lists available social sets)
-./scripts/typefully.js config:set-default
-
-# Set default (non-interactive)
-./scripts/typefully.js config:set-default 123 --location global
-```
-
-### Create a tweet (using default social set)
-```bash
+# Create a tweet (default social set)
 ./scripts/typefully.js drafts:create --text "Hello, world!"
-```
 
-### Create a tweet with explicit social_set_id
-```bash
+# Explicit social_set_id
 ./scripts/typefully.js drafts:create 123 --text "Hello, world!"
-```
 
-### Create a cross-platform post (specific platforms)
-```bash
+# Cross-platform, same content
 ./scripts/typefully.js drafts:create --platform x,linkedin,threads --text "Big announcement!"
-```
-
-### Resolve LinkedIn mention syntax from a company URL
-```bash
-./scripts/typefully.js linkedin:organizations:resolve --organization-url "https://www.linkedin.com/company/typefullycom/"
-```
-
-### Create a LinkedIn draft with a mention
-```bash
-./scripts/typefully.js drafts:create --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
-```
-
-### Create a post on all connected platforms
-```bash
 ./scripts/typefully.js drafts:create --all --text "Posting everywhere!"
-```
 
-### Create and schedule for next slot
-```bash
+# Create and schedule for the next slot
 ./scripts/typefully.js drafts:create --text "Scheduled post" --schedule next-free-slot
-```
 
-### Create with tags
-```bash
+# Create with tags
 ./scripts/typefully.js drafts:create --text "Marketing post" --tags marketing,product
-```
 
-### List scheduled posts sorted by date
-```bash
+# List scheduled posts, newest scheduled first
 ./scripts/typefully.js drafts:list --status scheduled --sort scheduled_date
-```
 
-### Get queue view for a date range
-```bash
+# Queue view for a date range
 ./scripts/typefully.js queue:get --start-date 2026-02-01 --end-date 2026-02-29
-```
 
-### Get X post analytics for a date range
-```bash
-./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07
-```
-
-### Get X post analytics including replies
-```bash
-./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07 --include-replies
-```
-
-### Paginate through X analytics results
-```bash
-./scripts/typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-31 --limit 100 --offset 100
-```
-
-### Get X followers analytics for the default range
-```bash
-./scripts/typefully.js analytics:followers:get
-```
-
-### Get X followers analytics for a date range
-```bash
-./scripts/typefully.js analytics:followers:get --start-date 2026-03-01 --end-date 2026-03-31
-```
-
-### Get queue schedule
-```bash
-./scripts/typefully.js queue:schedule:get
-```
-
-### Replace queue schedule rules
-```bash
+# Replace queue schedule rules
 ./scripts/typefully.js queue:schedule:put --rules '[{"h":9,"m":30,"days":["mon","wed","fri"]}]'
-```
 
-### Reply to a tweet
-```bash
-./scripts/typefully.js drafts:create --platform x --text "Great thread!" --reply-to "https://x.com/user/status/123456"
-```
+# Draft with scratchpad notes
+./scripts/typefully.js drafts:create --text "Launching next week!" --scratchpad "Coordinate with marketing before publishing."
 
-### Post to an X community
-```bash
-./scripts/typefully.js drafts:create --platform x --text "Community update" --community 1493446837214187523
-```
+# Upload media, then attach it
+./scripts/typefully.js media:upload ./image.jpg          # -> {"media_id": "abc-123", "status": "ready"}
+./scripts/typefully.js drafts:create --text "Check out this image!" --media abc-123
 
-### Create an X quote post
-```bash
-./scripts/typefully.js drafts:create --platform x --text "My take on this" --quote-post-url "https://x.com/user/status/1234567890123456789"
-```
-
-### Create an X post with content disclosure labels
-```bash
-./scripts/typefully.js drafts:create --platform x --text "Sponsored AI-assisted update" --paid-partnership --made-with-ai
-```
-
-### Update a draft to quote an X post
-```bash
-./scripts/typefully.js drafts:update 456 --platform x --quote-post-url "https://x.com/user/status/1234567890123456789" --use-default
-```
-
-### Add an X content disclosure label to an existing draft
-```bash
-./scripts/typefully.js drafts:update 456 --made-with-ai --use-default
-```
-
-### Create draft with share URL
-```bash
-./scripts/typefully.js drafts:create --text "Check this out" --share
-```
-
-### Create draft with scratchpad notes
-```bash
-./scripts/typefully.js drafts:create --text "Launching next week!" --scratchpad "Draft for product launch. Coordinate with marketing team before publishing."
-```
-
-### Upload media and create post with it
-```bash
-# Single command handles upload + polling - returns when ready!
-./scripts/typefully.js media:upload ./image.jpg
-# Returns: {"media_id": "abc-123-def", "status": "ready", "message": "Media uploaded and ready to use"}
-
-# Create post with the media attached
-./scripts/typefully.js drafts:create --text "Check out this image!" --media abc-123-def
-```
-
-### Upload multiple media files
-```bash
-# Upload each file (each waits for processing)
-./scripts/typefully.js media:upload ./photo1.jpg  # Returns media_id: id1
-./scripts/typefully.js media:upload ./photo2.jpg  # Returns media_id: id2
-
-# Create post with multiple media (comma-separated)
-./scripts/typefully.js drafts:create --text "Photo dump!" --media id1,id2
-```
-
-### Add media to an existing draft
-```bash
-# Upload media
-./scripts/typefully.js media:upload ./new-image.jpg  # Returns media_id: xyz
-
-# Update draft with media (456 is the draft_id)
+# Add media to an existing draft
 ./scripts/typefully.js drafts:update 456 --text "Updated post with image" --media xyz --use-default
 ```
 
-### Setup (interactive)
-```bash
-./scripts/typefully.js setup
-```
+---
 
-### Setup (non-interactive, for scripts/CI)
-```bash
-# Auto-selects default social set if only one exists
-./scripts/typefully.js setup --key typ_xxx --location global
+## Reference
 
-# With explicit default social set
-./scripts/typefully.js setup --key typ_xxx --location global --default-social-set 123
+### Character limits
 
-# Skip default social set selection entirely
-./scripts/typefully.js setup --key typ_xxx --no-default
-```
+X 280 · LinkedIn 3000 · Threads 500 · Bluesky 300 · Mastodon 500.
 
-## Platform Names
+### Draft URLs
 
-Use these exact names for the `--platform` option:
-- `x` - X (formerly Twitter)
-- `linkedin` - LinkedIn
-- `threads` - Threads
-- `bluesky` - Bluesky
-- `mastodon` - Mastodon
+Typefully draft URLs encode the social set and draft IDs: `https://typefully.com/?a=<social_set_id>&d=<draft_id>` (e.g. `a=12345` → social_set_id, `d=67890` → draft_id).
 
-## Draft URLs
+### Automation guidelines
 
-Typefully draft URLs contain the social set and draft IDs:
-```
-https://typefully.com/?a=<social_set_id>&d=<draft_id>
-```
+To keep accounts in good standing, especially on X:
 
-Example: `https://typefully.com/?a=12345&d=67890`
-- `a=12345` → social_set_id
-- `d=67890` → draft_id
-
-## Draft Scratchpad
-
-**When the user explictly asked to add notes, ideas, or anything else in the draft scratchpad, use the `--scratchpad` flag—do NOT write to local files!**
-
-The `--scratchpad` option attaches internal notes directly to the Typefully draft. These notes:
-- Are visible in the Typefully UI alongside the draft
-- Stay attached to the draft permanently
-- Are private and never published to social media
-- Are perfect for storing thread expansion ideas, research notes, context, etc.
-
-```bash
-# CORRECT: Notes attached to the draft in Typefully
-./scripts/typefully.js drafts:create 123 --text "My post" --scratchpad "Ideas for expanding: 1) Add stats 2) Include quote"
-
-# WRONG: Do NOT write notes to local files when the user wants them in Typefully
-# Writing to /tmp/scratchpad/ or any local file is NOT the same thing
-```
-
-## Automation Guidelines
-
-When automating posts, especially on X, follow these rules to keep accounts in good standing:
-
-- **No duplicate content** across multiple accounts
-- **No unsolicited automated replies** - only reply when explicitly requested by the user
-- **No trending manipulation** - don't mass-post about trending topics
-- **No fake engagement** - don't automate likes, reposts, or follows
-- **Respect rate limits** - the API has rate limits, don't spam requests
-- **Drafts are private** - content stays private until published or explicitly shared
+- No duplicate content across accounts.
+- No unsolicited automated replies — only reply when the user explicitly requests it.
+- No trending manipulation, no fake engagement (likes/reposts/follows).
+- Respect rate limits; drafts stay private until published or explicitly shared.
 
 When in doubt, create drafts for user review rather than publishing directly.
-
-**Publishing confirmation**: Unless the user explicitly asks to "publish now" or "post immediately", always confirm before publishing. Creating a draft is safe; publishing is irreversible and goes public instantly.
-
-## Tips
-
-- **Smart platform default**: If `--platform` is omitted, the first connected platform is auto-selected
-- **All platforms**: Use `--all` to post to all connected platforms at once
-- **Character limits**: X (280), LinkedIn (3000), Threads (500), Bluesky (300), Mastodon (500)
-- **LinkedIn mentions**: Use `@[Name](urn:li:organization:ID)` in post text; resolve IDs via `linkedin:organizations:resolve`
-- **Thread creation**: Use `---` on its own line to split into multiple posts (thread)
-- **Scheduling**: Use `next-free-slot` to let Typefully pick the optimal time
-- **Cross-posting**: List multiple platforms separated by commas: `--platform x,linkedin`
-- **Draft titles**: Use `--title` for internal organization (not posted to social media)
-- **Draft scratchpad**: Use `--scratchpad` to attach notes to the draft in Typefully (NOT local files!) - perfect for thread ideas, research, context
-- **X analytics**: Use `analytics:posts:list --start-date ... --end-date ...` to fetch post metrics for a social set; replies are excluded by default, and `--include-replies` opts back in
-- **X followers analytics**: Use `analytics:followers:get --start-date ... --end-date ...` to fetch daily follower counts, or omit dates for the API default range
-- **X content disclosures**: Use `--paid-partnership` and/or `--made-with-ai` on `drafts:create` or `drafts:update`; these flags are X-only and are applied only to X posts
-- **Publishing quota**: Use `social-sets:get` and inspect `publishing_quota` to see remaining publish capacity and reset time
-- **Read from file**: Use `--file ./post.txt` instead of `--text` to read content from a file
-- **Sorting drafts**: Use `--sort` with values like `created_at`, `-created_at`, `scheduled_date`, etc.

@@ -220,6 +220,118 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:create --all excludes x_article from connected post platforms', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/55', {
+    assert: authAssertFactory(apiKey),
+    json: { id: '55', platforms: { x_article: {}, linkedin: {}, x: {} } },
+  });
+
+  server.expect('POST', '/v2/social-sets/55/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(Object.keys(req.bodyJson.platforms), ['x', 'linkedin']);
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '55', '--all', '--text', 'Hello'],
+      {
+        cwd: sandbox.cwd,
+        env: {
+          HOME: sandbox.home,
+          TYPEFULLY_API_BASE: baseUrl,
+          TYPEFULLY_API_KEY: apiKey,
+        },
+      }
+    );
+
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create supports standalone X Article markdown and cover media', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const markdown = '# Article Title\n\nFirst section\n---\nStill the same article body';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x_article: {
+            content_markdown: markdown,
+            cover_media_id: 'media-123',
+          },
+        },
+        draft_title: 'Article draft',
+        tags: ['longform'],
+      });
+    },
+    json: { id: 'article-1' },
+  });
+    const result = await runCli(
+      [
+        'drafts:create',
+        '9',
+        '--platform',
+        'x_article',
+        '--content-markdown',
+        markdown,
+        '--cover-media-id',
+        'media-123',
+        '--title',
+        'Article draft',
+        '--tags',
+        'longform',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'article-1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('create-draft alias forwards X Article content and cover flags', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const markdown = '# Alias Article\n\nBody';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x_article: {
+            content_markdown: markdown,
+            cover_media_id: 'cover-1',
+          },
+        },
+      });
+    },
+    json: { id: 'article-alias' },
+  });
+    const result = await runCli(
+      [
+        'create-draft',
+        '--social-set-id',
+        '9',
+        '--platform',
+        'x_article',
+        '--content-markdown',
+        markdown,
+        '--cover-media-id',
+        'cover-1',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'article-alias' });
+    server.assertNoPendingExpectations();
+  }));
+
   it('drafts:schedule sends publish_at payload', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey 
   }) => {
@@ -314,7 +426,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required',
+      error: 'At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -689,6 +801,76 @@ describe('drafts', () => {
     assert.deepEqual(parseJsonOrNull(result.stdout), { error: '--text or --file is required' });
   }));
 
+  it('drafts:create requires X Article flags to use --platform x_article', withCliHarness(async ({
+    sandbox, server
+  }) => {
+    const result = await runCli(
+      ['drafts:create', '9', '--content-markdown', '# Title\n\nBody'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'X Article flags require --platform x_article',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create requires content markdown for X Article drafts', withCliHarness(async ({
+    sandbox, server
+  }) => {
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x_article', '--cover-media-id', 'cover-1'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--content-markdown is required for X Article drafts',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create rejects x_article combined with other platforms', withCliHarness(async ({
+    sandbox, server
+  }) => {
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x_article,x', '--content-markdown', '# Title\n\nBody'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'x_article is standalone and cannot be combined with other platforms',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create rejects post-only flags for X Article drafts', withCliHarness(async ({
+    sandbox, server
+  }) => {
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x_article', '--content-markdown', '# Title\n\nBody', '--media', 'm1'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--media cannot be used with --platform x_article',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:update rejects post-only flags for X Article updates before reading files', withCliHarness(async ({
+    sandbox, server
+  }) => {
+    const result = await runCli(
+      ['drafts:update', '9', 'article-1', '--platform', 'x_article', '--file', './missing.md'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--file cannot be used with --platform x_article',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
   it('drafts:update supports title/schedule/share/notes without fetching existing draft', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey 
   }) => {
@@ -713,6 +895,127 @@ describe('drafts', () => {
     assert.equal(server.requests.length, 1);
     server.assertNoPendingExpectations();
     assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+  }));
+
+  it('drafts:update supports X Article content and cover without fetching existing draft', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const markdown = '# Updated Article\n\nBody with --- preserved';
+  server.expect('PATCH', '/v2/social-sets/9/drafts/article-1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x_article: {
+            content_markdown: markdown,
+            cover_media_id: 'cover-2',
+          },
+        },
+      });
+    },
+    json: { id: 'article-1', ok: true },
+  });
+    const result = await runCli(
+      [
+        'drafts:update',
+        '9',
+        'article-1',
+        '--platform',
+        'x_article',
+        '--content-markdown',
+        markdown,
+        '--cover-media-id',
+        'cover-2',
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.equal(server.requests.length, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'article-1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update supports X Article cover-only update and removal with null', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('PATCH', '/v2/social-sets/9/drafts/article-1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x_article: {
+            cover_media_id: 'cover-3',
+          },
+        },
+      });
+    },
+    json: { id: 'article-1', ok: true },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/article-1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x_article: {
+            cover_media_id: null,
+          },
+        },
+      });
+    },
+    json: { id: 'article-1', ok: true },
+  });
+
+    const setCover = await runCli(
+      ['drafts:update', '9', 'article-1', '--platform', 'x_article', '--cover-media-id', 'cover-3'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(setCover.code, 0);
+
+    const removeCover = await runCli(
+      ['drafts:update', '9', 'article-1', '--platform', 'x_article', '--cover-media-id', 'null'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(removeCover.code, 0);
+    assert.equal(server.requests.length, 2);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('update-draft alias forwards X Article update flags', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const markdown = '# Alias Update\n\nBody';
+  server.expect('PATCH', '/v2/social-sets/9/drafts/article-1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x_article: {
+            content_markdown: markdown,
+          },
+        },
+      });
+    },
+    json: { id: 'article-1', ok: true },
+  });
+    const result = await runCli(
+      [
+        'update-draft',
+        'article-1',
+        '--social-set-id',
+        '9',
+        '--platform',
+        'x_article',
+        '--content-markdown',
+        markdown,
+      ],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'article-1', ok: true });
+    server.assertNoPendingExpectations();
   }));
 
   it('drafts:update reads from file via -f and can target multiple platforms', withCliHarness(async ({
