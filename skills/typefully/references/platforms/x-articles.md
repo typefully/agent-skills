@@ -1,5 +1,7 @@
 # X Articles
 
+> Script paths are relative to the skill root (where `SKILL.md` lives), e.g. `./scripts/typefully.js`. Character limit does not apply — X Articles are long-form.
+
 Use this guide when creating, updating, scheduling, publishing, or commenting on X Article drafts through the Typefully CLI.
 
 ## Core Rules
