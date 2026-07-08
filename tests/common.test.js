@@ -6,6 +6,7 @@ const {
   authAssertFactory,
   expectCliOk,
   expectCliError,
+  parseJsonOrNull,
 } = require('./typefully-cli.test-helpers');
 
 describe('argument parsing', () => {
@@ -84,5 +85,27 @@ describe('global flag behavior', () => {
 
     const result = await run(['tags:list', '--social-set-id', '9']);
     expectCliOk(result, { results: [] });
+  }));
+});
+
+describe('api errors', () => {
+  it('explains 401 responses as authentication failures', withCliHarness(async ({ server, apiKey, run }) => {
+    server.expect('GET', '/v2/me', {
+      assert: authAssertFactory(apiKey),
+      status: 401,
+      json: { error: 'Invalid token' },
+    });
+
+    const result = await run(['me:get']);
+
+    expectCliError(result);
+    const out = parseJsonOrNull(result.stdout);
+    assert.equal(
+      out.error,
+      `Authentication failed: Typefully API key is invalid, expired, or lacks access. Run 'typefully.js setup' to configure a valid key.`,
+    );
+    assert.equal(out.action, 'Run: typefully.js setup');
+    assert.equal(out.api_key_url, 'https://typefully.com/?settings=api');
+    assert.deepEqual(out.response, { error: 'Invalid token' });
   }));
 });

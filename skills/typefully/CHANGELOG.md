@@ -4,11 +4,32 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
-## [Unreleased]
+## [2026-07-08]
+
+### Fixed
+
+- Invalid or expired API keys now return a clear authentication failure with setup guidance instead of a generic `HTTP 401`, including during setup and default social set configuration.
+- Skill instructions now tell agents to stop on missing or broken API keys instead of falling back to browser, web UI, or localhost draft access.
+
+## [2026-07-07]
 
 ### Added
 
 - `--api-base-url <url>` global CLI option to override the API base URL for one command; `/v2` is appended when omitted.
+- X Article draft support via `drafts:create` and `drafts:update` with `--platform x_article`.
+- `--content-markdown <markdown>` for X Article content.
+- `--cover-media-id <media_id|null>` for X Article cover images; pass the literal `null` on update to remove an existing cover.
+- `X_ARTICLES.md` guide with detailed X Article payload examples, supported markdown blocks, embeds, covers, and comment workflows.
+- `comments:create --platform x_article --selected-text "..." --text "..."` for comments anchored on visible X Article text without `--post-index`.
+
+### Changed
+
+- `--all` remains limited to connected post platforms and does not include standalone X Articles.
+
+## [2026-05-05]
+
+### Added
+
 - Per-draft comment-thread CRUD:
   - `comments:list <draft_id>` — list threads with `--platform`, `--status` (`unresolved` / `resolved` / `all`), `--limit`, `--offset` filters.
   - `comments:create <draft_id> --post-index <n> --selected-text "..." --text "..."` — create a thread anchored on a span. Optional `--platform`, `--occurrence`.
@@ -19,6 +40,11 @@ The format is based on Keep a Changelog.
 - `--exclude-comment-markers` (alias: `--exclude_comment_markers`) on `drafts:get` and `drafts:update` to render `posts[*].text` without inline `<typ:comment-thread>` markers (read-only / display use; round-trip back to `drafts:update` will lose comment anchors).
 - `--force-overwrite-comments` (alias: `--force_overwrite_comments`) on `drafts:update` to accept submitted text whose markers don't cover every stored comment thread; missing threads are resolved server-side and their anchors stripped.
 - SKILL docs cover the comment-thread workflow, marker round-trip rules, and when to use the new flags.
+
+## [2026-04-24]
+
+### Added
+
 - `analytics:followers:get [social_set_id]` to fetch X follower analytics, with optional `--start-date` / `--end-date` date filters and snake_case aliases.
 - `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
 - `--paid-partnership` / `--paid_partnership` and `--made-with-ai` / `--made_with_ai` for X draft create/update disclosure flags.
@@ -28,20 +54,6 @@ The format is based on Keep a Changelog.
 
 - `analytics:posts:list` now matches the backend analytics default: replies are excluded unless you explicitly pass `--include-replies`.
 - Analytics docs and examples now explain X post analytics, X follower analytics, and the explicit reply-inclusion workflow.
-
-## [2026-07-07]
-
-### Added
-
-- X Article draft support via `drafts:create` and `drafts:update` with `--platform x_article`.
-- `--content-markdown <markdown>` for X Article content.
-- `--cover-media-id <media_id|null>` for X Article cover images; pass the literal `null` on update to remove an existing cover.
-- `X_ARTICLES.md` guide with detailed X Article payload examples, supported markdown blocks, embeds, covers, and comment workflows.
-- `comments:create --platform x_article --selected-text "..." --text "..."` for comments anchored on visible X Article text without `--post-index`.
-
-### Changed
-
-- `--all` remains limited to connected post platforms and does not include standalone X Articles.
 
 ## [2026-03-17]
 

@@ -8,7 +8,10 @@ const {
   parseJsonOrNull,
   authAssertFactory,
   expectCliOk,
+  expectCliError,
 } = require('./typefully-cli.test-helpers');
+
+const AUTH_FAILURE_MESSAGE = `Authentication failed: Typefully API key is invalid, expired, or lacks access. Run 'typefully.js setup' to configure a valid key.`;
 
 async function readLocalConfig(cwd) {
   return JSON.parse(await fs.readFile(path.join(cwd, '.typefully', 'config.json'), 'utf8'));
@@ -48,6 +51,23 @@ describe('config:set-default', () => {
     const cfg = await readLocalConfig(sandbox.cwd);
     assert.equal(cfg.defaultSocialSetId, '123');
   }));
+
+  it('returns authentication guidance when default validation gets a 401', withCliHarness(async ({ server, apiKey, run }) => {
+    server.expect('GET', '/v2/social-sets/123', {
+      assert: authAssertFactory(apiKey),
+      status: 401,
+      json: { error: 'Invalid token' },
+    });
+
+    const result = await run(['config:set-default', '--social-set-id', '123', '--location', 'local']);
+
+    expectCliError(result);
+    const out = parseJsonOrNull(result.stdout);
+    assert.equal(out.error, AUTH_FAILURE_MESSAGE);
+    assert.equal(out.action, 'Run: typefully.js setup');
+    assert.equal(out.api_key_url, 'https://typefully.com/?settings=api');
+    assert.deepEqual(out.response, { error: 'Invalid token' });
+  }));
 });
 
 describe('setup', () => {
@@ -72,6 +92,49 @@ describe('setup', () => {
 
     const gitignore = await fs.readFile(path.join(sandbox.cwd, '.gitignore'), 'utf8');
     assert.ok(gitignore.includes('.typefully/'));
+  }));
+
+  it('returns authentication guidance when default social set validation gets a 401', withCliHarness(async ({ server, run }) => {
+    server.expect('GET', '/v2/social-sets/123', {
+      assert: authAssertFactory('typ_setup_key'),
+      status: 401,
+      json: { error: 'Invalid token' },
+    });
+
+    const result = await run(
+      ['setup', '--key', 'typ_setup_key', '--location', 'local', '--default-social-set', '123'],
+      { env: { TYPEFULLY_API_KEY: '' } }
+    );
+
+    expectCliError(result);
+    const out = parseJsonOrNull(result.stdout);
+    assert.equal(out.error, AUTH_FAILURE_MESSAGE);
+    assert.equal(out.action, 'Run: typefully.js setup');
+    assert.equal(out.api_key_url, 'https://typefully.com/?settings=api');
+    assert.deepEqual(out.response, { error: 'Invalid token' });
+  }));
+
+  it('returns authentication guidance when social set discovery gets a 401', withCliHarness(async ({ server, run }) => {
+    server.expect('GET', '/v2/social-sets', {
+      assert: (req) => {
+        authAssertFactory('typ_setup_key')(req);
+        assert.equal(req.search, '?limit=50');
+      },
+      status: 401,
+      json: { error: 'Invalid token' },
+    });
+
+    const result = await run(
+      ['setup', '--key', 'typ_setup_key', '--location', 'local'],
+      { env: { TYPEFULLY_API_KEY: '' } }
+    );
+
+    expectCliError(result);
+    const out = parseJsonOrNull(result.stdout);
+    assert.equal(out.error, AUTH_FAILURE_MESSAGE);
+    assert.equal(out.action, 'Run: typefully.js setup');
+    assert.equal(out.api_key_url, 'https://typefully.com/?settings=api');
+    assert.deepEqual(out.response, { error: 'Invalid token' });
   }));
 
   it('supports --no-default and avoids API calls', withCliHarness(async ({ sandbox, server, run }) => {

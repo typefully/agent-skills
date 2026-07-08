@@ -75,6 +75,15 @@ When you change anything that affects how a user runs the CLI or uses the skill 
 
 Changelog entries must be **user-facing only**. Do not include internal implementation details like refactors, test/CI changes, formatting-only edits, or code organization.
 
+### Changelog Dates
+
+Default to dated changelog sections, not `Unreleased`. When adding user-facing entries:
+
+- If a section for today's date already exists, add the new entry there.
+- If no section for today's date exists, create one at the top using `YYYY-MM-DD`.
+- Only create or keep an `Unreleased` section when the change is intentionally not shipping with the current skill update.
+- If you find shipped entries still under `Unreleased`, move them into the date section for when they shipped before adding new entries.
+
 ## Commit & Pull Request Guidelines
 
 - NEVER add "Co-authored with Claude" or that kind of AI-assistant plugin to commit messages or PR descriptions.

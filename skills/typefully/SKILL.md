@@ -4,7 +4,7 @@ description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
-last-updated: 2026-07-07
+last-updated: 2026-07-08
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -16,7 +16,7 @@ Create, schedule, and publish social media content across X, LinkedIn, Threads, 
 >
 > **Freshness check**: If more than 30 days have passed since the `last-updated` date above, tell the user the skill may be outdated and point them to the update methods in [`references/setup.md`](references/setup.md).
 >
-> **Missing API key**: If the CLI returns **"API key not found"**, tell the user to run `./scripts/typefully.js setup` themselves and stop — do not hunt for credentials. See [`references/setup.md`](references/setup.md).
+> **Authentication failures**: If the CLI returns **"API key not found"**, **"Authentication failed"**, **"HTTP 401"**, or any invalid/expired-key message, tell the user to run `./scripts/typefully.js setup` or update `TYPEFULLY_API_KEY`, then stop. Do not hunt for credentials or fall back to the Typefully web UI, browser scraping, or a localhost dev server. See [`references/setup.md`](references/setup.md).
 
 ## Reference guides
 
