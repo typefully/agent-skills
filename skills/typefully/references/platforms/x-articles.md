@@ -17,6 +17,14 @@ Use this guide when creating, updating, scheduling, publishing, or commenting on
 
 `content_markdown` is canonical X Article Markdown. Typefully validates and normalizes it server-side.
 
+When reviewing an existing article, treat returned Markdown as a round-trip representation, not necessarily the prettiest authoring form. Typefully may serialize adjacent marks separately, for example:
+
+```md
+**A bold sentence ending before **[**a bold link**](https://example.com), then normal text.
+```
+
+That can be correct if the rendered article shows bold text followed by a bold link. Do not flag or rewrite this pattern solely because the Markdown could be prettier; only change it when the rendered/visible article is wrong, or when the user explicitly asks to normalize the source.
+
 Required structure:
 
 - The first non-empty block must be `# Title`; that heading sets the article title.

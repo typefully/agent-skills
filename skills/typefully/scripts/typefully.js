@@ -19,6 +19,7 @@ const GLOBAL_CONFIG_FILE = path.join(GLOBAL_CONFIG_DIR, 'config.json');
 const LOCAL_CONFIG_DIR = '.typefully';
 const LOCAL_CONFIG_FILE = path.join(LOCAL_CONFIG_DIR, 'config.json');
 const API_KEY_URL = 'https://typefully.com/?settings=api';
+const AUTH_FAILURE_MESSAGE = `Authentication failed: Typefully API key is invalid, expired, or lacks access. Run 'typefully.js setup' to configure a valid key.`;
 const X_ARTICLE_PLATFORM = 'x_article';
 const POST_PLATFORM_ORDER = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon'];
 const X_ARTICLE_POST_ONLY_FLAGS = [
@@ -243,6 +244,20 @@ function requireApiKey() {
   return result.key;
 }
 
+function authenticationFailureDetails(response) {
+  return {
+    action: 'Run: typefully.js setup',
+    api_key_url: API_KEY_URL,
+    response,
+  };
+}
+
+function errorIfAuthenticationFailure(err) {
+  if (err?.status === 401) {
+    error(AUTH_FAILURE_MESSAGE, authenticationFailureDetails(err.response));
+  }
+}
+
 function extractGlobalArgs(args) {
   const result = [];
 
@@ -322,6 +337,9 @@ async function apiRequest(method, endpoint, body = null, opts = {}) {
 
   if (!response.ok) {
     if (exitOnError) {
+      if (response.status === 401) {
+        error(AUTH_FAILURE_MESSAGE, authenticationFailureDetails(data));
+      }
       const validationCode = data?.code || data?.error?.code;
       if (response.status === 400 && validationCode === 'VALIDATION_ERROR') {
         const validationMessage = extractApiErrorMessage(data) || 'Request validation failed';
@@ -329,7 +347,7 @@ async function apiRequest(method, endpoint, body = null, opts = {}) {
       }
       error(`HTTP ${response.status}`, { response: data });
     }
-    const err = new Error(`HTTP ${response.status}`);
+    const err = new Error(response.status === 401 ? AUTH_FAILURE_MESSAGE : `HTTP ${response.status}`);
     err.response = data;
     err.status = response.status;
     throw err;
@@ -919,18 +937,15 @@ async function cmdSetup(args) {
     process.env.TYPEFULLY_API_KEY = apiKey;
     try {
       await apiRequest('GET', `/social-sets/${defaultSocialSetArg}`, null, { exitOnError: false });
-    } catch {
+    } catch (err) {
+      errorIfAuthenticationFailure(err);
+      error(`Social set ${defaultSocialSetArg} not found or not accessible`);
+    } finally {
       if (origKey) {
         process.env.TYPEFULLY_API_KEY = origKey;
       } else {
         delete process.env.TYPEFULLY_API_KEY;
       }
-      error(`Social set ${defaultSocialSetArg} not found or not accessible`);
-    }
-    if (origKey) {
-      process.env.TYPEFULLY_API_KEY = origKey;
-    } else {
-      delete process.env.TYPEFULLY_API_KEY;
     }
 
     defaultSocialSetId = defaultSocialSetArg;
@@ -944,18 +959,20 @@ async function cmdSetup(args) {
   } else {
     // Fetch social sets to determine what to do
     let socialSets = null;
+    const origKey = process.env.TYPEFULLY_API_KEY;
+    process.env.TYPEFULLY_API_KEY = apiKey;
     try {
-      const origKey = process.env.TYPEFULLY_API_KEY;
-      process.env.TYPEFULLY_API_KEY = apiKey;
       socialSets = await apiRequest('GET', '/social-sets?limit=50', null, { exitOnError: false });
+    } catch (err) {
+      errorIfAuthenticationFailure(err);
+      console.error(fmt.warn(`Could not fetch social sets: ${err.message}`));
+      console.error(fmt.dim('You can set a default later with: typefully.js config:set-default'));
+    } finally {
       if (origKey) {
         process.env.TYPEFULLY_API_KEY = origKey;
       } else {
         delete process.env.TYPEFULLY_API_KEY;
       }
-    } catch (err) {
-      console.error(fmt.warn(`Could not fetch social sets: ${err.message}`));
-      console.error(fmt.dim('You can set a default later with: typefully.js config:set-default'));
     }
 
     if (socialSets) {
@@ -1104,7 +1121,8 @@ async function cmdConfigSetDefault(args) {
   // Verify the social set exists
   try {
     await apiRequest('GET', `/social-sets/${socialSetId}`, null, { exitOnError: false });
-  } catch {
+  } catch (err) {
+    errorIfAuthenticationFailure(err);
     error(`Social set ${socialSetId} not found or not accessible`);
   }
 

@@ -18,13 +18,14 @@ Requirements: Node.js 18+ (built-in fetch). No other dependencies.
 
 Development only: pass `--api-base-url <url>` to target another API base; `/v2` is appended when omitted. If a local server's TLS certificate isn't trusted (`fetch failed` / `UNABLE_TO_VERIFY_LEAF_SIGNATURE`), see [`local-development.md`](local-development.md).
 
-## Handling "API key not found" errors
+## Handling missing or invalid API keys
 
-When the CLI returns "API key not found":
+When the CLI returns "API key not found", "Authentication failed", "HTTP 401", or says the key is invalid or expired:
 
-1. **Tell the user to run `./scripts/typefully.js setup`** themselves — it is interactive, so you cannot run it for them.
-2. **Stop and wait.** No API operation works without a key. Do not draft or prepare content until setup is confirmed.
+1. **Tell the user to run `./scripts/typefully.js setup`** themselves or update `TYPEFULLY_API_KEY` with a fresh key from https://typefully.com/?settings=api.
+2. **Stop and wait.** No Typefully API operation works without a valid key. Do not draft or prepare content until setup is confirmed.
 3. **Do not** search Keychain, `.env` files, config directories, Trash, or construct commands to find credentials.
+4. **Do not** fall back to the Typefully web UI, browser scraping, or a localhost development server to read or edit drafts. A Typefully draft URL only provides IDs; the API must be the source of truth.
 
 Trust the CLI's error messages and follow them.
 
