@@ -2454,6 +2454,11 @@ async function main() {
   const command = args[0] || 'help';
   const commandArgs = args.slice(1);
 
+  if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+    showHelp();
+    return;
+  }
+
   const handler = COMMANDS[command];
 
   if (!handler) {
