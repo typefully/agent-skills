@@ -3,7 +3,9 @@ name: typefully
 description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
-  social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon.
+  social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon,
+  or when the user drops a Typefully draft URL such as
+  https://typefully.com/?a=<social_set_id>&d=<draft_id>.
 last-updated: 2026-07-09
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
@@ -17,6 +19,24 @@ Create, schedule, and publish social media content across X, LinkedIn, Threads, 
 > **Freshness check**: If more than 30 days have passed since the `last-updated` date above, tell the user the skill may be outdated and point them to the update methods in [`references/setup.md`](references/setup.md).
 >
 > **Authentication failures**: If the CLI returns **"API key not found"**, **"Authentication failed"**, **"HTTP 401"**, or any invalid/expired-key message, tell the user to run `./scripts/typefully.js setup` or update `TYPEFULLY_API_KEY`, then stop. Do not hunt for credentials or fall back to the Typefully web UI, browser scraping, or a localhost dev server. See [`references/setup.md`](references/setup.md).
+
+## Dropped Typefully draft URLs
+
+When the user gives you a Typefully draft URL, use this skill instead of browsing or scraping the Typefully web UI.
+
+- `https://typefully.com/?a=<social_set_id>&d=<draft_id>` maps to:
+
+  ```bash
+  ./scripts/typefully.js drafts:get <social_set_id> <draft_id>
+  ```
+
+- `https://typefully.com/?d=<draft_id>` can use the configured default social set:
+
+  ```bash
+  ./scripts/typefully.js drafts:get <draft_id> --use-default
+  ```
+
+For draft comments, replies, resolving, or edits on a dropped draft URL, first fetch the draft with the mapping above, then load [`references/comments.md`](references/comments.md) when comment workflow details are needed.
 
 ## Reference guides
 
@@ -264,7 +284,7 @@ X 280 · LinkedIn 3000 · Threads 500 · Bluesky 300 · Mastodon 500.
 
 ### Draft URLs
 
-Typefully draft URLs encode the social set and draft IDs: `https://typefully.com/?a=<social_set_id>&d=<draft_id>` (e.g. `a=12345` → social_set_id, `d=67890` → draft_id).
+Typefully draft URLs encode the social set and draft IDs: `https://typefully.com/?a=<social_set_id>&d=<draft_id>` (e.g. `a=12345` → social_set_id, `d=67890` → draft_id). See [Dropped Typefully draft URLs](#dropped-typefully-draft-urls) for the command mapping.
 
 ### Automation guidelines
 

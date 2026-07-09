@@ -6,6 +6,11 @@ The format is based on Keep a Changelog.
 
 ## 2026-07-09
 
+### Changed
+
+- Skill frontmatter and top-level instructions now explicitly trigger on Typefully draft URLs such as `https://typefully.com/?a=<social_set_id>&d=<draft_id>`.
+- Draft URL guidance now maps `a` to `social_set_id`, `d` to `draft_id`, and shows the `drafts:get` command with the default-social-set fallback.
+
 ### Fixed
 
 - `drafts:update` no longer crashes with `Cannot read properties of null (reading 'enabled')` when the draft response contains null platform entries (e.g. `x_article` on regular drafts). This affected every update that didn't pass `--platform`, plus all `--append` updates.
