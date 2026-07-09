@@ -4,6 +4,14 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-07-09
+
+### Fixed
+
+- `drafts:update` no longer crashes with `Cannot read properties of null (reading 'enabled')` when the draft response contains null platform entries (e.g. `x_article` on regular drafts). This affected every update that didn't pass `--platform`, plus all `--append` updates.
+- `drafts:update --append` and X-only metadata updates (`--quote-post-url`, `--paid-partnership`, `--made-with-ai` without `--text`) now strip response-only and platform-specific fields from fetched posts before re-sending them. The API's tightened request schemas reject platform-specific fields on the wrong platform with HTTP 422, so re-sending X post fields to LinkedIn/Threads/etc. previously failed.
+- Updates without `--platform` no longer try to write regular posts to a draft's `x_article` platform.
+
 ## 2026-07-08
 
 ### Fixed

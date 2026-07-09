@@ -451,6 +451,33 @@ function addQuotePostUrl(posts, quotePostUrl) {
   return posts.map(post => ({ ...post, quote_post_url: quotePostUrl }));
 }
 
+// Draft GET responses include response-only and platform-specific post fields
+// (e.g. subscribers_only, linkedin_reshare_urn) that the API's request schemas
+// reject with 422 on other platforms. Before re-sending fetched posts, keep only
+// the fields each platform's request schema accepts.
+function sanitizePostForPlatform(post, platform) {
+  const clean = { text: post.text };
+  if (Array.isArray(post.media_ids) && post.media_ids.length > 0) {
+    clean.media_ids = post.media_ids;
+  }
+  if (platform === 'x') {
+    for (const field of ['quote_post_url', 'subscribers_only', 'paid_partnership', 'made_with_ai']) {
+      if (post[field] !== undefined && post[field] !== null && post[field] !== false) {
+        clean[field] = post[field];
+      }
+    }
+  } else if (platform === 'linkedin') {
+    const reshareTarget = post.linkedin_reshare_target || post.linkedin_reshare_urn;
+    if (reshareTarget) {
+      clean.linkedin_reshare_target = reshareTarget;
+    }
+    if (post.hide_link_preview) {
+      clean.hide_link_preview = true;
+    }
+  }
+  return clean;
+}
+
 function getXContentDisclosuresFromParsed(parsed) {
   const paidPartnership = Boolean(parsed['paid-partnership'] || parsed.paid_partnership);
   const madeWithAi = Boolean(parsed['made-with-ai'] || parsed.made_with_ai);
@@ -1422,9 +1449,10 @@ async function cmdDraftsUpdate(args) {
       // Explicit platform(s) specified
       platformList = explicitPlatformList;
     } else {
-      // Default to draft's existing enabled platforms
+      // Default to draft's existing enabled post platforms. Disconnected or
+      // standalone platforms (x_article) can be null in the response.
       platformList = Object.entries(existing.platforms || {})
-        .filter(([, config]) => config.enabled)
+        .filter(([platform, config]) => POST_PLATFORM_ORDER.includes(platform) && config && config.enabled)
         .map(([platform]) => platform);
 
       if (platformList.length === 0) {
@@ -1449,7 +1477,7 @@ async function cmdDraftsUpdate(args) {
         // Extract posts from the first enabled platform
         let existingPosts = [];
         for (const [, config] of Object.entries(existing.platforms || {})) {
-          if (config.enabled && config.posts) {
+          if (config && config.enabled && Array.isArray(config.posts) && config.posts.length > 0) {
             existingPosts = config.posts;
             break;
           }
@@ -1488,9 +1516,10 @@ async function cmdDraftsUpdate(args) {
     // Build platforms object
     const platformsObj = {};
     for (const p of platformList) {
+      const sanitizedPosts = postsArray.map(post => sanitizePostForPlatform(post, p));
       const platformPosts = p === 'x'
-        ? addXContentDisclosures(addQuotePostUrl(postsArray, quotePostUrl), xContentDisclosures)
-        : postsArray;
+        ? addXContentDisclosures(addQuotePostUrl(sanitizedPosts, quotePostUrl), xContentDisclosures)
+        : sanitizedPosts;
       platformsObj[p] = {
         enabled: true,
         posts: platformPosts,
