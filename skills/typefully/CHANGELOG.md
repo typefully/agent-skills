@@ -4,7 +4,13 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
-## 2026-07-09
+## 2026-07-10
+
+### Added
+
+- LinkedIn first comment support: `drafts:create`/`drafts:update` accept `--linkedin-first-comment <text>` to post a plain-text comment right after the LinkedIn post is published (the "link in the first comment" pattern). On update, a literal `null` removes the comment and omitting the flag preserves it.
+- Aliases: `--linkedin_first_comment`, `--first-comment`, `--first_comment`.
+- Documented in `SKILL.md` (flags table, common actions) and `references/platforms/linkedin.md`.
 
 ### Changed
 

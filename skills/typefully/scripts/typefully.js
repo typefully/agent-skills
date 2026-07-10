@@ -451,6 +451,34 @@ function addQuotePostUrl(posts, quotePostUrl) {
   return posts.map(post => ({ ...post, quote_post_url: quotePostUrl }));
 }
 
+// LinkedIn first comment: a plain-text comment Typefully posts right after the
+// LinkedIn post is published. Returns { provided, value } where value === null
+// means "clear the first comment" (literal null, same convention as
+// --cover-media-id).
+function getLinkedInFirstCommentFromParsed(parsed) {
+  const keys = ['linkedin-first-comment', 'linkedin_first_comment', 'first-comment', 'first_comment'];
+  const found = [];
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+      found.push({ key, value: coerceFlagValueToString(parsed[key], `--${key}`, { allowEmpty: true }) });
+    }
+  }
+
+  if (found.length === 0) return { provided: false, value: null };
+
+  const primary = found[0].value;
+  for (const entry of found) {
+    if (entry.value !== primary) {
+      error('Conflicting LinkedIn first comment values', Object.fromEntries(found.map(e => [`--${e.key}`, e.value])));
+    }
+  }
+
+  if (primary.trim() === '' || primary.trim().toLowerCase() === 'null') {
+    return { provided: true, value: null };
+  }
+  return { provided: true, value: primary };
+}
+
 // Draft GET responses include response-only and platform-specific post fields
 // (e.g. subscribers_only, linkedin_reshare_urn) that the API's request schemas
 // reject with 422 on other platforms. Before re-sending fetched posts, keep only
@@ -509,6 +537,12 @@ function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
       error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
     }
     error('--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.');
+  }
+}
+
+function validateLinkedInOnlyOptions(platformList, { firstComment }) {
+  if (firstComment.provided && !platformList.includes('linkedin')) {
+    error('--linkedin-first-comment is only supported for LinkedIn. Include linkedin in --platform or remove the flag.');
   }
 }
 
@@ -1264,6 +1298,7 @@ async function cmdDraftsCreate(args) {
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
+  const linkedInFirstComment = getLinkedInFirstCommentFromParsed(parsed);
 
   // Determine platform(s)
   let platforms = parsed.platform;
@@ -1294,6 +1329,7 @@ async function cmdDraftsCreate(args) {
 
   const platformList = parsePlatformList(platforms);
   validateXArticlePlatformUsage(platformList, parsed);
+  validateLinkedInOnlyOptions(platformList, { firstComment: linkedInFirstComment });
 
   // Build request body
   const platformsObj = {};
@@ -1349,6 +1385,11 @@ async function cmdDraftsCreate(args) {
         }
       }
 
+      // LinkedIn-specific settings
+      if (platform === 'linkedin' && linkedInFirstComment.value) {
+        platformConfig.settings = { first_comment: linkedInFirstComment.value };
+      }
+
       platformsObj[platform] = platformConfig;
     }
   }
@@ -1396,6 +1437,7 @@ async function cmdDraftsUpdate(args) {
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
+  const linkedInFirstComment = getLinkedInFirstCommentFromParsed(parsed);
 
   const body = {};
   const explicitPlatformList = parsed.platform
@@ -1408,6 +1450,7 @@ async function cmdDraftsUpdate(args) {
 
   if (explicitPlatformList) {
     validateXArticlePlatformUsage(explicitPlatformList, parsed);
+    validateLinkedInOnlyOptions(explicitPlatformList, { firstComment: linkedInFirstComment });
   }
 
   const shouldUpdateArticle = Boolean(
@@ -1428,7 +1471,9 @@ async function cmdDraftsUpdate(args) {
     text = getPostTextFromParsed(parsed);
   }
 
-  const shouldUpdatePosts = Boolean(!shouldUpdateArticle && (text || quotePostUrl || xContentDisclosures.hasAny));
+  const shouldUpdatePosts = Boolean(
+    !shouldUpdateArticle && (text || quotePostUrl || xContentDisclosures.hasAny || linkedInFirstComment.provided)
+  );
   if (shouldUpdatePosts) {
     if (explicitPlatformList) {
       validateXOnlyPostOptions(explicitPlatformList, {
@@ -1469,8 +1514,10 @@ async function cmdDraftsUpdate(args) {
       quotePostUrl,
       disclosures: xContentDisclosures,
     });
+    validateLinkedInOnlyOptions(platformList, { firstComment: linkedInFirstComment });
 
     let postsArray;
+    let metadataOnlyPosts = null; // platform -> existing posts, for metadata-only updates
 
     if (text) {
       if (parsed.append) {
@@ -1501,22 +1548,37 @@ async function cmdDraftsUpdate(args) {
         });
       }
     } else {
-      // X-only metadata update: preserve existing X posts and add quote/disclosure attrs.
-      const existingXPosts = existing.platforms?.x?.posts;
-      if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
-        if (quotePostUrl && !xContentDisclosures.hasAny) {
-          error('Cannot apply --quote-post-url because this draft has no existing X posts');
+      // Metadata-only update: preserve existing posts on the target platforms.
+      metadataOnlyPosts = {};
+      platformList = [];
+
+      if (quotePostUrl || xContentDisclosures.hasAny) {
+        const existingXPosts = existing.platforms?.x?.posts;
+        if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
+          if (quotePostUrl && !xContentDisclosures.hasAny) {
+            error('Cannot apply --quote-post-url because this draft has no existing X posts');
+          }
+          error('Cannot apply X-only post options because this draft has no existing X posts');
         }
-        error('Cannot apply X-only post options because this draft has no existing X posts');
+        metadataOnlyPosts.x = existingXPosts;
+        platformList.push('x');
       }
-      postsArray = existingXPosts;
-      platformList = ['x'];
+
+      if (linkedInFirstComment.provided) {
+        const existingLinkedInPosts = existing.platforms?.linkedin?.posts;
+        if (!Array.isArray(existingLinkedInPosts) || existingLinkedInPosts.length === 0) {
+          error('Cannot apply --linkedin-first-comment because this draft has no existing LinkedIn posts');
+        }
+        metadataOnlyPosts.linkedin = existingLinkedInPosts;
+        platformList.push('linkedin');
+      }
     }
 
     // Build platforms object
     const platformsObj = {};
     for (const p of platformList) {
-      const sanitizedPosts = postsArray.map(post => sanitizePostForPlatform(post, p));
+      const sourcePosts = metadataOnlyPosts ? metadataOnlyPosts[p] : postsArray;
+      const sanitizedPosts = sourcePosts.map(post => sanitizePostForPlatform(post, p));
       const platformPosts = p === 'x'
         ? addXContentDisclosures(addQuotePostUrl(sanitizedPosts, quotePostUrl), xContentDisclosures)
         : sanitizedPosts;
@@ -1524,6 +1586,11 @@ async function cmdDraftsUpdate(args) {
         enabled: true,
         posts: platformPosts,
       };
+      // The API preserves the LinkedIn first comment when settings are
+      // omitted, so only send them when the flag was passed (null clears).
+      if (p === 'linkedin' && linkedInFirstComment.provided) {
+        platformsObj[p].settings = { first_comment: linkedInFirstComment.value };
+      }
     }
     body.platforms = platformsObj;
   }
@@ -1553,7 +1620,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
+    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --linkedin-first-comment, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
   }
 
   const params = new URLSearchParams();
@@ -1620,6 +1687,10 @@ async function cmdCreateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'community', '--community');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
+  const linkedInFirstComment = getLinkedInFirstCommentFromParsed(parsed);
+  if (linkedInFirstComment.provided) {
+    forwarded.push('--linkedin-first-comment', linkedInFirstComment.value ?? 'null');
+  }
   if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
   if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
   if (parsed.share) forwarded.push('--share');
@@ -1668,6 +1739,10 @@ async function cmdUpdateDraftAlias(args) {
   pushStringFlag(forwarded, parsed, 'tags', '--tags', { allowEmpty: true });
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
+  const linkedInFirstComment = getLinkedInFirstCommentFromParsed(parsed);
+  if (linkedInFirstComment.provided) {
+    forwarded.push('--linkedin-first-comment', linkedInFirstComment.value ?? 'null');
+  }
   if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
   if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
   if (parsed.share) forwarded.push('--share');
@@ -2152,6 +2227,9 @@ COMMANDS:
     --reply-to <url>                         URL of X post to reply to
     --community <id>                         X community ID to post to
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --linkedin-first-comment <text>          Plain-text comment posted right after the LinkedIn
+                                             post is published (LinkedIn only, no mention syntax).
+                                             Also accepts: --first-comment
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --share                                  Generate a public share URL for the draft
@@ -2170,6 +2248,9 @@ COMMANDS:
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
     --tags <tag_slugs>                       Comma-separated tag slugs
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --linkedin-first-comment <text|null>     Set the LinkedIn first comment; use literal null to
+                                             remove it. Omitting the flag keeps the current comment.
+                                             Also accepts: --first-comment
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --share                                  Generate a public share URL for the draft
@@ -2296,6 +2377,15 @@ EXAMPLES:
 
   # Use resolved mention syntax in a LinkedIn draft
   ./typefully.js drafts:create 123 --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
+
+  # Create a LinkedIn post with a first comment (posted right after publishing)
+  ./typefully.js drafts:create 123 --platform linkedin --text "Big launch today!" --linkedin-first-comment "Full details: https://example.com/launch"
+
+  # Add or replace the first comment on an existing LinkedIn draft
+  ./typefully.js drafts:update 123 d456 --linkedin-first-comment "Link in this comment: https://example.com"
+
+  # Remove the first comment from a LinkedIn draft
+  ./typefully.js drafts:update 123 d456 --linkedin-first-comment null
 
   # Create a tweet (uses default social set if configured)
   ./typefully.js drafts:create --text "Hello world!"
