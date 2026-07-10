@@ -746,7 +746,7 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
-  it('drafts:update text-only update preserves the existing LinkedIn first comment', withCliHarness(async ({
+  it('drafts:update text-only update omits LinkedIn settings (API preserves the first comment)', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey
   }) => {
   server.expect('GET', '/v2/social-sets/9/drafts/d1', {
@@ -771,7 +771,6 @@ describe('drafts', () => {
           linkedin: {
             enabled: true,
             posts: [{ text: 'New copy' }],
-            settings: { first_comment: 'Existing comment' },
           },
         },
       });

@@ -479,20 +479,6 @@ function getLinkedInFirstCommentFromParsed(parsed) {
   return { provided: true, value: primary };
 }
 
-function buildLinkedInSettingsForUpdate(firstComment, existing) {
-  if (firstComment.provided) {
-    // Explicit set or clear (literal null).
-    return { first_comment: firstComment.value };
-  }
-  // Flag omitted: re-send the existing first comment so a text-only update
-  // doesn't clear it (the API clears LinkedIn settings when omitted).
-  const existingFirstComment = existing?.platforms?.linkedin?.settings?.first_comment;
-  if (existingFirstComment) {
-    return { first_comment: existingFirstComment };
-  }
-  return null;
-}
-
 // Draft GET responses include response-only and platform-specific post fields
 // (e.g. subscribers_only, linkedin_reshare_urn) that the API's request schemas
 // reject with 422 on other platforms. Before re-sending fetched posts, keep only
@@ -1600,11 +1586,10 @@ async function cmdDraftsUpdate(args) {
         enabled: true,
         posts: platformPosts,
       };
-      if (p === 'linkedin') {
-        const linkedInSettings = buildLinkedInSettingsForUpdate(linkedInFirstComment, existing);
-        if (linkedInSettings) {
-          platformsObj[p].settings = linkedInSettings;
-        }
+      // The API preserves the LinkedIn first comment when settings are
+      // omitted, so only send them when the flag was passed (null clears).
+      if (p === 'linkedin' && linkedInFirstComment.provided) {
+        platformsObj[p].settings = { first_comment: linkedInFirstComment.value };
       }
     }
     body.platforms = platformsObj;

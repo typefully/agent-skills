@@ -8,7 +8,7 @@ The format is based on Keep a Changelog.
 
 ### Added
 
-- LinkedIn first comment support: `drafts:create`/`drafts:update` accept `--linkedin-first-comment <text>` to post a plain-text comment right after the LinkedIn post is published (the "link in the first comment" pattern). On update, a literal `null` removes the comment and omitting the flag preserves it — including on text-only updates, where the CLI re-sends the existing comment so the API doesn't clear it.
+- LinkedIn first comment support: `drafts:create`/`drafts:update` accept `--linkedin-first-comment <text>` to post a plain-text comment right after the LinkedIn post is published (the "link in the first comment" pattern). On update, a literal `null` removes the comment and omitting the flag preserves it.
 - Aliases: `--linkedin_first_comment`, `--first-comment`, `--first_comment`.
 - Documented in `SKILL.md` (flags table, common actions) and `references/platforms/linkedin.md`.
 
