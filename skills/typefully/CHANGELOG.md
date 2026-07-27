@@ -4,6 +4,13 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-07-27
+
+### Added
+
+- Link-preview cards are now documented for LinkedIn, Threads, and Bluesky: when a post contains a URL, Typefully automatically fetches Open Graph metadata and publishes a rich preview card — no flag needed.
+- New `--hide-link-preview` flag (also `--hide_link_preview`) on `drafts:create` and `drafts:update` publishes the URL as plain text with no card. Supported on LinkedIn and Threads only, matching the Typefully editor; the flag errors when neither platform is targeted. On `drafts:update` it works without `--text` to hide the card on an existing draft.
+
 ## 2026-07-09
 
 ### Changed

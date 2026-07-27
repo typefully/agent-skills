@@ -471,9 +471,9 @@ function sanitizePostForPlatform(post, platform) {
     if (reshareTarget) {
       clean.linkedin_reshare_target = reshareTarget;
     }
-    if (post.hide_link_preview) {
-      clean.hide_link_preview = true;
-    }
+  }
+  if (HIDE_LINK_PREVIEW_PLATFORMS.includes(platform) && post.hide_link_preview) {
+    clean.hide_link_preview = true;
   }
   return clean;
 }
@@ -509,6 +509,24 @@ function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
       error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
     }
     error('--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.');
+  }
+}
+
+// Platforms where Typefully lets you suppress the link-preview card (matches the web editor).
+const HIDE_LINK_PREVIEW_PLATFORMS = ['linkedin', 'threads'];
+
+function getHideLinkPreviewFromParsed(parsed) {
+  return Boolean(parsed['hide-link-preview'] || parsed.hide_link_preview);
+}
+
+function addHideLinkPreview(posts, hideLinkPreview) {
+  if (!hideLinkPreview) return posts;
+  return posts.map(post => ({ ...post, hide_link_preview: true }));
+}
+
+function validateHideLinkPreviewOption(platformList, hideLinkPreview) {
+  if (hideLinkPreview && !platformList.some(p => HIDE_LINK_PREVIEW_PLATFORMS.includes(p))) {
+    error('--hide-link-preview is only supported for LinkedIn and Threads posts. Include linkedin or threads in --platform or remove the flag.');
   }
 }
 
@@ -1260,10 +1278,13 @@ async function cmdDraftsCreate(args) {
     paid_partnership: 'boolean',
     'made-with-ai': 'boolean',
     made_with_ai: 'boolean',
+    'hide-link-preview': 'boolean',
+    hide_link_preview: 'boolean',
   });
   const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
+  const hideLinkPreview = getHideLinkPreviewFromParsed(parsed);
 
   // Determine platform(s)
   let platforms = parsed.platform;
@@ -1312,6 +1333,7 @@ async function cmdDraftsCreate(args) {
       quotePostUrl,
       disclosures: xContentDisclosures,
     });
+    validateHideLinkPreviewOption(platformList, hideLinkPreview);
 
     // Split text into posts (thread support)
     const posts = splitThreadText(text);
@@ -1330,9 +1352,12 @@ async function cmdDraftsCreate(args) {
     });
 
     for (const platform of platformList) {
-      const postsArray = platform === 'x'
+      let postsArray = platform === 'x'
         ? addXContentDisclosures(addQuotePostUrl(basePostsArray, quotePostUrl), xContentDisclosures)
         : basePostsArray;
+      if (HIDE_LINK_PREVIEW_PLATFORMS.includes(platform)) {
+        postsArray = addHideLinkPreview(postsArray, hideLinkPreview);
+      }
       const platformConfig = {
         enabled: true,
         posts: postsArray,
@@ -1392,10 +1417,13 @@ async function cmdDraftsUpdate(args) {
     exclude_comment_markers: 'boolean',
     'force-overwrite-comments': 'boolean',
     force_overwrite_comments: 'boolean',
+    'hide-link-preview': 'boolean',
+    hide_link_preview: 'boolean',
   });
   const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:update');
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
+  const hideLinkPreview = getHideLinkPreviewFromParsed(parsed);
 
   const body = {};
   const explicitPlatformList = parsed.platform
@@ -1428,13 +1456,16 @@ async function cmdDraftsUpdate(args) {
     text = getPostTextFromParsed(parsed);
   }
 
-  const shouldUpdatePosts = Boolean(!shouldUpdateArticle && (text || quotePostUrl || xContentDisclosures.hasAny));
+  const shouldUpdatePosts = Boolean(
+    !shouldUpdateArticle && (text || quotePostUrl || xContentDisclosures.hasAny || hideLinkPreview)
+  );
   if (shouldUpdatePosts) {
     if (explicitPlatformList) {
       validateXOnlyPostOptions(explicitPlatformList, {
         quotePostUrl,
         disclosures: xContentDisclosures,
       });
+      validateHideLinkPreviewOption(explicitPlatformList, hideLinkPreview);
     }
 
     // Parse media IDs
@@ -1469,6 +1500,7 @@ async function cmdDraftsUpdate(args) {
       quotePostUrl,
       disclosures: xContentDisclosures,
     });
+    validateHideLinkPreviewOption(platformList, hideLinkPreview);
 
     let postsArray;
 
@@ -1500,8 +1532,11 @@ async function cmdDraftsUpdate(args) {
           return post;
         });
       }
-    } else {
+    } else if (quotePostUrl || xContentDisclosures.hasAny) {
       // X-only metadata update: preserve existing X posts and add quote/disclosure attrs.
+      if (hideLinkPreview) {
+        error('Cannot combine --hide-link-preview with X-only flags unless --text is provided');
+      }
       const existingXPosts = existing.platforms?.x?.posts;
       if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
         if (quotePostUrl && !xContentDisclosures.hasAny) {
@@ -1511,15 +1546,31 @@ async function cmdDraftsUpdate(args) {
       }
       postsArray = existingXPosts;
       platformList = ['x'];
+    } else {
+      // --hide-link-preview only: preserve existing posts on platforms that support suppression.
+      const targets = platformList.filter(p =>
+        HIDE_LINK_PREVIEW_PLATFORMS.includes(p) &&
+        Array.isArray(existing.platforms?.[p]?.posts) &&
+        existing.platforms[p].posts.length > 0
+      );
+      if (targets.length === 0) {
+        error('Cannot apply --hide-link-preview because this draft has no existing LinkedIn or Threads posts');
+      }
+      postsArray = null;
+      platformList = targets;
     }
 
     // Build platforms object
     const platformsObj = {};
     for (const p of platformList) {
-      const sanitizedPosts = postsArray.map(post => sanitizePostForPlatform(post, p));
-      const platformPosts = p === 'x'
+      const sourcePosts = postsArray ?? existing.platforms?.[p]?.posts ?? [];
+      const sanitizedPosts = sourcePosts.map(post => sanitizePostForPlatform(post, p));
+      let platformPosts = p === 'x'
         ? addXContentDisclosures(addQuotePostUrl(sanitizedPosts, quotePostUrl), xContentDisclosures)
         : sanitizedPosts;
+      if (HIDE_LINK_PREVIEW_PLATFORMS.includes(p)) {
+        platformPosts = addHideLinkPreview(platformPosts, hideLinkPreview);
+      }
       platformsObj[p] = {
         enabled: true,
         posts: platformPosts,
@@ -1553,7 +1604,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, or --force-overwrite-comments is required');
+    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required');
   }
 
   const params = new URLSearchParams();
@@ -2154,6 +2205,8 @@ COMMANDS:
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
+    --hide-link-preview                      Suppress the link-preview card (LinkedIn/Threads only).
+                                             Also accepts: --hide_link_preview
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
@@ -2172,6 +2225,8 @@ COMMANDS:
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
+    --hide-link-preview                      Suppress the link-preview card (LinkedIn/Threads only).
+                                             Also accepts: --hide_link_preview
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --exclude-comment-markers                Render response posts[*].text without
