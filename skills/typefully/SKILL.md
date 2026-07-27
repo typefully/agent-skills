@@ -104,6 +104,17 @@ When the user asks to add notes, ideas, or context to a draft, use `--scratchpad
 ./scripts/typefully.js drafts:create --text "My post" --scratchpad "Ideas: 1) Add stats 2) Include quote"
 ```
 
+### Link previews
+
+When a post contains a URL, Typefully automatically fetches Open Graph metadata for the last URL in the text and publishes a rich link-preview card on **LinkedIn, Threads, and Bluesky**. No flag is needed — it just works. X and Mastodon unfurl links themselves after publishing.
+
+To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppression is supported on **LinkedIn and Threads only** (matching the Typefully editor); the flag errors if neither platform is targeted, and is ignored for other platforms in a mixed-platform draft:
+
+```bash
+./scripts/typefully.js drafts:create --platform linkedin,threads --text "Read this https://example.com" --hide-link-preview
+./scripts/typefully.js drafts:update draft-123 --hide-link-preview --use-default   # hide the card on an existing draft
+```
+
 ---
 
 ## 3. Schedule & publish
@@ -183,6 +194,7 @@ Add any of these flags to a `drafts:create` or `drafts:update` command. The **Ap
 | `--scratchpad "<notes>"` | Attach internal notes (see [Scratchpad notes](#scratchpad-notes)) | create, update |
 | `--share` | Generate a public share URL | create, update |
 | `--schedule <iso\|next-free-slot\|now>` | Schedule or reschedule the draft | create, update |
+| `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads only — see [Link previews](#link-previews)) | create, update |
 | `--exclude-comment-markers` | Render response without anchors (display only; validation still applies) | update |
 | `--force-overwrite-comments` | Destructive last resort — see [`comments.md`](references/comments.md) | update |
 
