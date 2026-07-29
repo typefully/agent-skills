@@ -3,16 +3,16 @@ name: typefully
 description: >
   Create, schedule, and manage social media posts via Typefully. ALWAYS use this
   skill when asked to draft, schedule, post, or check tweets, posts, threads, or
-  social media content for Twitter/X, LinkedIn, Threads, Bluesky, or Mastodon,
-  or when the user drops a Typefully draft URL such as
+  social media content for Twitter/X, LinkedIn, Threads, Bluesky, Mastodon, or
+  Substack Notes, or when the user drops a Typefully draft URL such as
   https://typefully.com/?a=<social_set_id>&d=<draft_id>.
-last-updated: 2026-07-09
+last-updated: 2026-07-29
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
 # Typefully Skill
 
-Create, schedule, and publish social media content across X, LinkedIn, Threads, Bluesky, and Mastodon using [Typefully](https://typefully.com). Run everything through `./scripts/typefully.js` (Node.js 18+, no dependencies). All commands output JSON.
+Create, schedule, and publish social media content across X, LinkedIn, Threads, Bluesky, Mastodon, and Substack Notes using [Typefully](https://typefully.com). Run everything through `./scripts/typefully.js` (Node.js 18+, no dependencies). All commands output JSON.
 
 > **Script paths** below are relative to this skill's directory. Resolve them based on where the skill is installed.
 >
@@ -71,8 +71,9 @@ To decide which social set to use:
 ./scripts/typefully.js drafts:create --text "Your post"
 ```
 
-- If `--platform` is omitted, the first connected platform is auto-selected. Named platforms: `x`, `linkedin`, `threads`, `bluesky`, `mastodon`, `x_article`.
-- Split a thread with `---` on its own line.
+- If `--platform` is omitted, the first connected platform is auto-selected. Named platforms: `x`, `linkedin`, `threads`, `bluesky`, `mastodon`, `substack` (Substack Notes), `x_article`.
+- Split a thread with `---` on its own line. Exception: `substack` takes a single post per draft — no threads. For a thread plus a Substack Note, use the one-draft pattern below to give `substack` its own single-post content.
+- Substack Notes media: images and GIFs only (up to 6) — video is rejected.
 - Attach media with `--media`, tags with `--tags`, internal notes with `--scratchpad`, an internal name with `--title`.
 - Read content from a file with `--file ./post.txt` instead of `--text`.
 
@@ -95,6 +96,8 @@ When content should differ per platform (e.g. an X thread plus a tailored Linked
 Never create multiple drafts unless the user explicitly wants separate drafts per platform.
 
 > `--all` excludes `x_article`. X Articles are standalone and cannot be combined with any other platform — see [`references/platforms/x-articles.md`](references/platforms/x-articles.md).
+>
+> `--all` includes `substack` when connected. Since Substack Notes take a single post, `--all` with thread content errors — exclude `substack` via `--platform`, or give it its own single-post content with `drafts:update`.
 
 ### Scratchpad notes
 
@@ -106,9 +109,9 @@ When the user asks to add notes, ideas, or context to a draft, use `--scratchpad
 
 ### Link previews
 
-When a post contains a URL, Typefully automatically fetches Open Graph metadata for the last URL in the text and publishes a rich link-preview card on **LinkedIn, Threads, and Bluesky**. No flag is needed — it just works. X and Mastodon unfurl links themselves after publishing.
+When a post contains a URL, Typefully automatically fetches Open Graph metadata for the last URL in the text and publishes a rich link-preview card on **LinkedIn, Threads, Bluesky, and Substack Notes**. No flag is needed — it just works. X and Mastodon unfurl links themselves after publishing. On Substack Notes the card is skipped when the note has images (images and the link card are mutually exclusive there).
 
-To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppression is supported on **LinkedIn and Threads only** (matching the Typefully editor); the flag errors if neither platform is targeted, and is ignored for other platforms in a mixed-platform draft:
+To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppression is supported on **LinkedIn, Threads, and Substack Notes only** (matching the Typefully editor); the flag errors if none of these platforms is targeted, and is ignored for other platforms in a mixed-platform draft:
 
 ```bash
 ./scripts/typefully.js drafts:create --platform linkedin,threads --text "Read this https://example.com" --hide-link-preview
@@ -137,6 +140,7 @@ To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppr
 |--------------|--------|
 | "Draft a tweet about X" | `drafts:create --text "..."` |
 | "Post this to LinkedIn" | `drafts:create --platform linkedin --text "..."` |
+| "Post a Substack Note" | `drafts:create --platform substack --text "..."` (single post, no threads) |
 | "Post to X and LinkedIn" (same content) | `drafts:create --platform x,linkedin --text "..."` |
 | "X thread + tailored LinkedIn post" | One draft, then `drafts:update` to add the platform |
 | "What's scheduled?" / "Recent posts?" | `drafts:list --status scheduled` / `--status published` |
@@ -194,7 +198,7 @@ Add any of these flags to a `drafts:create` or `drafts:update` command. The **Ap
 | `--scratchpad "<notes>"` | Attach internal notes (see [Scratchpad notes](#scratchpad-notes)) | create, update |
 | `--share` | Generate a public share URL | create, update |
 | `--schedule <iso\|next-free-slot\|now>` | Schedule or reschedule the draft | create, update |
-| `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads only — see [Link previews](#link-previews)) | create, update |
+| `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads/Substack only — see [Link previews](#link-previews)) | create, update |
 | `--exclude-comment-markers` | Render response without anchors (display only; validation still applies) | update |
 | `--force-overwrite-comments` | Destructive last resort — see [`comments.md`](references/comments.md) | update |
 
@@ -292,7 +296,7 @@ Tags are scoped per social set — a tag in one social set doesn't appear in ano
 
 ### Character limits
 
-X 280 · LinkedIn 3000 · Threads 500 · Bluesky 300 · Mastodon 500.
+X 280 · LinkedIn 3000 · Threads 500 · Bluesky 300 · Mastodon 500 · Substack Notes 10000.
 
 ### Draft URLs
 

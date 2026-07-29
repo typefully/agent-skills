@@ -7,7 +7,7 @@ Use this guide when creating, updating, scheduling, publishing, or commenting on
 ## Core Rules
 
 - Always use `--platform x_article`.
-- `x_article` is standalone. Do not combine it with `x`, LinkedIn, Threads, Bluesky, Mastodon, or `--all`.
+- `x_article` is standalone. Do not combine it with `x`, LinkedIn, Threads, Bluesky, Mastodon, Substack Notes, or `--all`.
 - Use `--content-markdown <markdown>` for article content.
 - Use `--cover-media-id <media_id>` to set a cover image.
 - Use `--cover-media-id null` on update to remove a cover image.

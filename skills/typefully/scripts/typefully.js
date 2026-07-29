@@ -21,7 +21,8 @@ const LOCAL_CONFIG_FILE = path.join(LOCAL_CONFIG_DIR, 'config.json');
 const API_KEY_URL = 'https://typefully.com/?settings=api';
 const AUTH_FAILURE_MESSAGE = `Authentication failed: Typefully API key is invalid, expired, or lacks access. Run 'typefully.js setup' to configure a valid key.`;
 const X_ARTICLE_PLATFORM = 'x_article';
-const POST_PLATFORM_ORDER = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon'];
+const SUBSTACK_PLATFORM = 'substack';
+const POST_PLATFORM_ORDER = ['x', 'linkedin', 'threads', 'bluesky', 'mastodon', 'substack'];
 const X_ARTICLE_POST_ONLY_FLAGS = [
   ['text', '--text'],
   ['file', '--file'],
@@ -513,7 +514,7 @@ function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
 }
 
 // Platforms where Typefully lets you suppress the link-preview card (matches the web editor).
-const HIDE_LINK_PREVIEW_PLATFORMS = ['linkedin', 'threads'];
+const HIDE_LINK_PREVIEW_PLATFORMS = ['linkedin', 'threads', 'substack'];
 
 function getHideLinkPreviewFromParsed(parsed) {
   return Boolean(parsed['hide-link-preview'] || parsed.hide_link_preview);
@@ -526,7 +527,16 @@ function addHideLinkPreview(posts, hideLinkPreview) {
 
 function validateHideLinkPreviewOption(platformList, hideLinkPreview) {
   if (hideLinkPreview && !platformList.some(p => HIDE_LINK_PREVIEW_PLATFORMS.includes(p))) {
-    error('--hide-link-preview is only supported for LinkedIn and Threads posts. Include linkedin or threads in --platform or remove the flag.');
+    error('--hide-link-preview is only supported for LinkedIn, Threads, and Substack posts. Include linkedin, threads, or substack in --platform or remove the flag.');
+  }
+}
+
+// Substack Notes accepts a single post per draft — the API rejects longer
+// posts arrays with a 422, so fail fast with a clearer message.
+function validateSubstackSinglePost(platformsObj) {
+  const posts = platformsObj[SUBSTACK_PLATFORM]?.posts;
+  if (Array.isArray(posts) && posts.length > 1) {
+    error('substack (Substack Notes) supports a single post per draft — threads are not supported. Use a single post, or target other platforms with --platform.');
   }
 }
 
@@ -1376,6 +1386,8 @@ async function cmdDraftsCreate(args) {
 
       platformsObj[platform] = platformConfig;
     }
+
+    validateSubstackSinglePost(platformsObj);
   }
 
   const body = { platforms: platformsObj };
@@ -1554,7 +1566,7 @@ async function cmdDraftsUpdate(args) {
         existing.platforms[p].posts.length > 0
       );
       if (targets.length === 0) {
-        error('Cannot apply --hide-link-preview because this draft has no existing LinkedIn or Threads posts');
+        error('Cannot apply --hide-link-preview because this draft has no existing LinkedIn, Threads, or Substack posts');
       }
       postsArray = null;
       platformList = targets;
@@ -1576,6 +1588,7 @@ async function cmdDraftsUpdate(args) {
         posts: platformPosts,
       };
     }
+    validateSubstackSinglePost(platformsObj);
     body.platforms = platformsObj;
   }
 
@@ -2188,9 +2201,10 @@ COMMANDS:
     --use-default                            Required when using default social set with single arg
 
   drafts:create [social_set_id] [options]    Create a new draft (uses default if ID omitted)
-    --platform <platforms>                   Comma-separated: x,linkedin,threads,bluesky,mastodon
+    --platform <platforms>                   Comma-separated: x,linkedin,threads,bluesky,mastodon,substack
                                              or standalone x_article
-                                             (auto-selects first connected platform if omitted)
+                                             (auto-selects first connected platform if omitted;
+                                             substack = Substack Notes, single post only)
     --all                                    Post to all connected post platforms (excludes x_article)
     --text <text>                            Post content (use --- on its own line for threads)
     --file, -f <path>                        Read content from file instead of --text
@@ -2262,7 +2276,7 @@ COMMANDS:
 
   comments:list <draft_id> [options]         List comment threads on a draft
     --social-set-id <id>                     Social set (uses default if omitted)
-    --platform <platform>                    Filter by platform: x, linkedin, threads, bluesky, mastodon, x_article
+    --platform <platform>                    Filter by platform: x, linkedin, threads, bluesky, mastodon, substack, x_article
     --status <status>                        Filter by: unresolved (default), resolved, all
     --limit <n>                              Max results (default: 10, max: 50)
     --offset <n>                             Skip first N results

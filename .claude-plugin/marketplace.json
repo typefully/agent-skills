@@ -13,7 +13,7 @@
     {
       "name": "typefully",
       "source": "./skills/typefully",
-      "description": "Draft, schedule, and manage social media posts across X, LinkedIn, Threads, Bluesky, and Mastodon",
+      "description": "Draft, schedule, and manage social media posts across X, LinkedIn, Threads, Bluesky, Mastodon, and Substack Notes",
       "strict": false,
       "skills": ["./skills/typefully"]
     }
