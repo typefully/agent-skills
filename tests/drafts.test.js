@@ -251,6 +251,93 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:create targets substack with a single post', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          substack: {
+            enabled: true,
+            posts: [{ text: 'A quick note' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'substack', '--text', 'A quick note'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create --all includes substack when connected', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/55', {
+    assert: authAssertFactory(apiKey),
+    json: { id: '55', platforms: { substack: {}, x: {} } },
+  });
+
+  server.expect('POST', '/v2/social-sets/55/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(Object.keys(req.bodyJson.platforms), ['x', 'substack']);
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '55', '--all', '--text', 'Hello'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create errors when thread content targets substack', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x,substack', '--text', 'Post one\n---\nPost two'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'substack (Substack Notes) supports a single post per draft — threads are not supported. Use a single post, or target other platforms with --platform.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:update --append errors when the draft targets substack', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        substack: { enabled: true, posts: [{ text: 'Existing note' }] },
+      },
+    },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--append', '--text', 'One more'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'substack (Substack Notes) supports a single post per draft — threads are not supported. Use a single post, or target other platforms with --platform.',
+    });
+    server.assertNoPendingExpectations();
+    assert.equal(server.requests.length, 1);
+  }));
+
   it('drafts:create supports standalone X Article markdown and cover media', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey
   }) => {

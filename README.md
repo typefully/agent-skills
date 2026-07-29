@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-green.svg)]()
 [![Typefully API](https://img.shields.io/badge/Typefully-API-3B9AF8)](https://typefully.com/docs/api)
 
-AI agent skills for drafting, scheduling, and managing social media posts across X, LinkedIn, Threads, Bluesky, and Mastodon. Give your AI agent the ability to manage your social media scheduling directly from your IDE or terminal.
+AI agent skills for drafting, scheduling, and managing social media posts across X, LinkedIn, Threads, Bluesky, Mastodon, and Substack Notes. Give your AI agent the ability to manage your social media scheduling directly from your IDE or terminal.
 
 Built on the [Typefully API](https://typefully.com/docs/api). [Typefully](https://typefully.com) is a writing and scheduling app used by 200k+ top creators and teams to grow on X, LinkedIn, Threads, and Bluesky.
 
@@ -95,6 +95,7 @@ Then test it in your agent to verify the latest local changes behave as expected
 - Threads
 - Bluesky
 - Mastodon
+- Substack Notes
 
 ## Troubleshooting
 

@@ -4,6 +4,13 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-07-29
+
+### Added
+
+- Substack Notes support: target it with `--platform substack` on `drafts:create` and `drafts:update`, combine it with other platforms in one draft, and filter comments with `--platform substack`. When connected, it is also included in `--all` and in platform auto-selection.
+- Substack Notes take a single post per draft: the CLI now rejects thread content (`---` separators or `--append`) targeting `substack` with a clear error before calling the API.
+
 ## 2026-07-27
 
 ### Added
