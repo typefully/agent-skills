@@ -109,9 +109,9 @@ When the user asks to add notes, ideas, or context to a draft, use `--scratchpad
 
 ### Link previews
 
-When a post contains a URL, Typefully automatically fetches Open Graph metadata for the last URL in the text and publishes a rich link-preview card on **LinkedIn, Threads, and Bluesky**. No flag is needed — it just works. X and Mastodon unfurl links themselves after publishing.
+When a post contains a URL, Typefully automatically fetches Open Graph metadata for the last URL in the text and publishes a rich link-preview card on **LinkedIn, Threads, Bluesky, and Substack Notes**. No flag is needed — it just works. X and Mastodon unfurl links themselves after publishing. On Substack Notes the card is skipped when the note has images (images and the link card are mutually exclusive there).
 
-To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppression is supported on **LinkedIn and Threads only** (matching the Typefully editor); the flag errors if neither platform is targeted, and is ignored for other platforms in a mixed-platform draft:
+To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppression is supported on **LinkedIn, Threads, and Substack Notes only** (matching the Typefully editor); the flag errors if none of these platforms is targeted, and is ignored for other platforms in a mixed-platform draft:
 
 ```bash
 ./scripts/typefully.js drafts:create --platform linkedin,threads --text "Read this https://example.com" --hide-link-preview
@@ -198,7 +198,7 @@ Add any of these flags to a `drafts:create` or `drafts:update` command. The **Ap
 | `--scratchpad "<notes>"` | Attach internal notes (see [Scratchpad notes](#scratchpad-notes)) | create, update |
 | `--share` | Generate a public share URL | create, update |
 | `--schedule <iso\|next-free-slot\|now>` | Schedule or reschedule the draft | create, update |
-| `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads only — see [Link previews](#link-previews)) | create, update |
+| `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads/Substack only — see [Link previews](#link-previews)) | create, update |
 | `--exclude-comment-markers` | Render response without anchors (display only; validation still applies) | update |
 | `--force-overwrite-comments` | Destructive last resort — see [`comments.md`](references/comments.md) | update |
 

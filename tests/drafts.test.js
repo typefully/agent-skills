@@ -819,7 +819,7 @@ describe('drafts', () => {
     assert.equal(server.requests.length, 0);
   }));
 
-  it('drafts:create applies --hide-link-preview only to LinkedIn and Threads posts', withCliHarness(async ({
+  it('drafts:create applies --hide-link-preview only to LinkedIn, Threads, and Substack posts', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey
   }) => {
   server.expect('POST', '/v2/social-sets/9/drafts', {
@@ -839,13 +839,17 @@ describe('drafts', () => {
             enabled: true,
             posts: [{ text: 'Read this https://example.com' }],
           },
+          substack: {
+            enabled: true,
+            posts: [{ text: 'Read this https://example.com', hide_link_preview: true }],
+          },
         },
       });
     },
     json: { id: 'd1' },
   });
     const result = await runCli(
-      ['drafts:create', '9', '--platform', 'linkedin,threads,bluesky', '--text', 'Read this https://example.com', '--hide-link-preview'],
+      ['drafts:create', '9', '--platform', 'linkedin,threads,bluesky,substack', '--text', 'Read this https://example.com', '--hide-link-preview'],
       { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
     );
     assert.equal(result.code, 0);
@@ -853,7 +857,7 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
-  it('drafts:create errors when --hide-link-preview is used without LinkedIn or Threads', withCliHarness(async ({
+  it('drafts:create errors when --hide-link-preview is used without LinkedIn, Threads, or Substack', withCliHarness(async ({
     sandbox, server
   }) => {
   const result = await runCli(
@@ -862,7 +866,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: '--hide-link-preview is only supported for LinkedIn and Threads posts. Include linkedin or threads in --platform or remove the flag.',
+      error: '--hide-link-preview is only supported for LinkedIn, Threads, and Substack posts. Include linkedin, threads, or substack in --platform or remove the flag.',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -1491,7 +1495,7 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
-  it('drafts:update errors on --hide-link-preview when the draft has no LinkedIn or Threads posts', withCliHarness(async ({
+  it('drafts:update errors on --hide-link-preview when the draft has no LinkedIn, Threads, or Substack posts', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey
   }) => {
   server.expect('GET', '/v2/social-sets/9/drafts/d1', {
@@ -1509,7 +1513,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: '--hide-link-preview is only supported for LinkedIn and Threads posts. Include linkedin or threads in --platform or remove the flag.',
+      error: '--hide-link-preview is only supported for LinkedIn, Threads, and Substack posts. Include linkedin, threads, or substack in --platform or remove the flag.',
     });
     assert.equal(server.requests.length, 1);
     server.assertNoPendingExpectations();

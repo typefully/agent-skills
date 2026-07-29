@@ -514,7 +514,7 @@ function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
 }
 
 // Platforms where Typefully lets you suppress the link-preview card (matches the web editor).
-const HIDE_LINK_PREVIEW_PLATFORMS = ['linkedin', 'threads'];
+const HIDE_LINK_PREVIEW_PLATFORMS = ['linkedin', 'threads', 'substack'];
 
 function getHideLinkPreviewFromParsed(parsed) {
   return Boolean(parsed['hide-link-preview'] || parsed.hide_link_preview);
@@ -527,7 +527,7 @@ function addHideLinkPreview(posts, hideLinkPreview) {
 
 function validateHideLinkPreviewOption(platformList, hideLinkPreview) {
   if (hideLinkPreview && !platformList.some(p => HIDE_LINK_PREVIEW_PLATFORMS.includes(p))) {
-    error('--hide-link-preview is only supported for LinkedIn and Threads posts. Include linkedin or threads in --platform or remove the flag.');
+    error('--hide-link-preview is only supported for LinkedIn, Threads, and Substack posts. Include linkedin, threads, or substack in --platform or remove the flag.');
   }
 }
 
@@ -1566,7 +1566,7 @@ async function cmdDraftsUpdate(args) {
         existing.platforms[p].posts.length > 0
       );
       if (targets.length === 0) {
-        error('Cannot apply --hide-link-preview because this draft has no existing LinkedIn or Threads posts');
+        error('Cannot apply --hide-link-preview because this draft has no existing LinkedIn, Threads, or Substack posts');
       }
       postsArray = null;
       platformList = targets;
