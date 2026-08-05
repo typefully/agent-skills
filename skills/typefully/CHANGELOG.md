@@ -4,6 +4,12 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-08-05
+
+### Added
+
+- Planned drafts: `--plan <iso|next-free-slot>` on `drafts:create` and `drafts:update` puts a draft on the queue/calendar at a date **without arming auto-publish** (mutually exclusive with `--schedule`). New `drafts:plan <draft_id> --time <...>` command mirrors `drafts:schedule`. Confirm a plan into a real schedule with `drafts:schedule`, publish it with `drafts:publish`, or clear it with `drafts:update --plan null`. Filter with `drafts:list --status planned`. A planned draft whose date has passed is not overdue and not a failure — replan or confirm it.
+
 ## 2026-07-29
 
 ### Added

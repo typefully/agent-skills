@@ -126,10 +126,13 @@ To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppr
 ./scripts/typefully.js drafts:create --text "..." --schedule next-free-slot   # or an ISO time, or "now"
 ./scripts/typefully.js drafts:schedule <draft_id> --time next-free-slot --use-default
 ./scripts/typefully.js drafts:publish <draft_id> --use-default
+./scripts/typefully.js drafts:create --text "..." --plan next-free-slot      # planned: dated but inert
+./scripts/typefully.js drafts:plan <draft_id> --time next-free-slot --use-default
 ```
 
 - `next-free-slot` lets Typefully pick the optimal time.
 - **Publishing is irreversible and public** — unless the user says "publish now" / "post immediately", confirm first. Creating a draft is safe.
+- **Planned drafts** sit on the queue/calendar at their date but never auto-publish. Confirm one into a real schedule with `drafts:schedule` (or publish it with `drafts:publish`). A planned draft whose date has passed is **not overdue and not a failure** — it simply hasn't been confirmed; replan or confirm it. `--plan`/`--schedule` are mutually exclusive; `drafts:update --plan null` returns the draft to plain draft status.
 - Single-arg commands require `--use-default` when a default social set is configured (see the [safety note](#commands) below).
 
 ---
@@ -146,6 +149,7 @@ To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppr
 | "What's scheduled?" / "Recent posts?" | `drafts:list --status scheduled` / `--status published` |
 | "Schedule this for tomorrow" | `drafts:create --text "..." --schedule "<ISO time>"` |
 | "Post this now" | `drafts:create --text "..." --schedule now` or `drafts:publish <id> --use-default` |
+| "Pencil this in for Tuesday" (no commitment to publish) | `drafts:create --text "..." --plan "<ISO time>"`, confirm later with `drafts:schedule` |
 | "Check available tags" | `tags:list` |
 | "Check my publishing quota" | `social-sets:get` → `publishing_quota` |
 | "Draft an X Article" | See [`references/platforms/x-articles.md`](references/platforms/x-articles.md) |
@@ -159,7 +163,7 @@ To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppr
 
 All commands output JSON. Every `[social_set_id]` is optional and falls back to the configured default.
 
-> **Safety note**: `drafts:get`, `drafts:update`, `drafts:delete`, `drafts:schedule`, and `drafts:publish` require `--use-default` when you pass a single argument (the draft_id) while a default social set is configured.
+> **Safety note**: `drafts:get`, `drafts:update`, `drafts:delete`, `drafts:schedule`, `drafts:plan`, and `drafts:publish` require `--use-default` when you pass a single argument (the draft_id) while a default social set is configured.
 
 Platform- and workflow-specific commands live in their guides: [`platforms/x.md`](references/platforms/x.md) (analytics, quotes, replies, communities, disclosures), [`platforms/linkedin.md`](references/platforms/linkedin.md) (mentions), [`platforms/x-articles.md`](references/platforms/x-articles.md), [`comments.md`](references/comments.md), and [`setup.md`](references/setup.md).
 
@@ -198,6 +202,7 @@ Add any of these flags to a `drafts:create` or `drafts:update` command. The **Ap
 | `--scratchpad "<notes>"` | Attach internal notes (see [Scratchpad notes](#scratchpad-notes)) | create, update |
 | `--share` | Generate a public share URL | create, update |
 | `--schedule <iso\|next-free-slot\|now>` | Schedule or reschedule the draft | create, update |
+| `--plan <iso\|next-free-slot>` | Plan the draft: dated but inert until confirmed (mutually exclusive with `--schedule`; `null` on update returns it to plain draft) | create, update |
 | `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads/Substack only — see [Link previews](#link-previews)) | create, update |
 | `--exclude-comment-markers` | Render response without anchors (display only; validation still applies) | update |
 | `--force-overwrite-comments` | Destructive last resort — see [`comments.md`](references/comments.md) | update |
@@ -217,17 +222,18 @@ Single-arg forms require `--use-default` when a default social set is configured
 
 | Command | Description |
 |---------|-------------|
-| `drafts:schedule <social_set_id> <draft_id> --time <iso\|next-free-slot>` | Schedule to a time or the next available slot |
+| `drafts:schedule <social_set_id> <draft_id> --time <iso\|next-free-slot>` | Schedule to a time or the next available slot (also confirms a planned draft) |
+| `drafts:plan <social_set_id> <draft_id> --time <iso\|next-free-slot>` | Plan to a date without arming auto-publish; confirm later with `drafts:schedule` |
 | `drafts:publish <social_set_id> <draft_id>` | Publish immediately |
 | `drafts:delete <social_set_id> <draft_id>` | Delete a draft |
 
 ### Queue
 
-The queue is a **social-set-specific timeline**: free queue slots (from the social set's queue schedule) plus scheduled drafts/posts for that same social set. Use `queue:get` when the user asks what is scheduled or free for an account in a date range.
+The queue is a **social-set-specific timeline**: free queue slots (from the social set's queue schedule) plus scheduled and planned drafts/posts for that same social set. Use `queue:get` when the user asks what is scheduled or free for an account in a date range.
 
 | Command | Description |
 |---------|-------------|
-| `queue:get [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Queue timeline: free slots + scheduled drafts/posts in a date range |
+| `queue:get [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` | Queue timeline: free slots + scheduled/planned drafts and posts in a date range (check each draft's `status` — planned drafts never auto-publish) |
 | `queue:schedule:get [social_set_id]` | Get queue schedule rules |
 | `queue:schedule:put [social_set_id] --rules '[{"h":9,"m":30,"days":["mon","wed","fri"]}]'` | Replace queue schedule rules (full replacement) |
 
