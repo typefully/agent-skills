@@ -1396,8 +1396,16 @@ async function cmdDraftsCreate(args) {
     body.draft_title = parsed.title;
   }
 
+  if (parsed.schedule && parsed.plan) {
+    error('--schedule and --plan are mutually exclusive - provide only one');
+  }
+
   if (parsed.schedule) {
     body.publish_at = parsed.schedule;
+  }
+
+  if (parsed.plan) {
+    body.plan_at = parsed.plan;
   }
 
   if (Object.prototype.hasOwnProperty.call(parsed, 'tags')) {
@@ -1596,8 +1604,17 @@ async function cmdDraftsUpdate(args) {
     body.draft_title = parsed.title;
   }
 
+  if (parsed.schedule && parsed.plan) {
+    error('--schedule and --plan are mutually exclusive - provide only one');
+  }
+
   if (parsed.schedule) {
     body.publish_at = parsed.schedule;
+  }
+
+  if (parsed.plan) {
+    // Literal null returns a planned/scheduled draft to plain draft status
+    body.plan_at = parsed.plan === 'null' ? null : parsed.plan;
   }
 
   if (parsed.share) {
@@ -1617,7 +1634,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required');
+    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --plan, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required');
   }
 
   const params = new URLSearchParams();
@@ -1760,6 +1777,21 @@ async function cmdDraftsSchedule(args) {
 
   const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, {
     publish_at: parsed.time,
+  });
+  output(data);
+}
+
+async function cmdDraftsPlan(args) {
+  const parsed = parseArgs(args, { 'use-default': 'boolean' });
+  // Require explicit --use-default when using default with single arg
+  const { socialSetId, draftId } = resolveDraftTargetFromParsed(parsed, 'drafts:plan');
+
+  if (!parsed.time) {
+    error('--time is required (use "next-free-slot" or a future ISO datetime)');
+  }
+
+  const data = await apiRequest('PATCH', `/social-sets/${socialSetId}/drafts/${draftId}`, {
+    plan_at: parsed.time,
   });
   output(data);
 }
@@ -2187,7 +2219,7 @@ COMMANDS:
                                              Also accepts: --end_date
 
   drafts:list [social_set_id] [options]      List drafts (uses default if ID omitted)
-    --status <status>                        Filter by: draft, scheduled, published, error, publishing
+    --status <status>                        Filter by: draft, planned, scheduled, published, error, publishing
     --tag <tag_slug>                         Filter by tag slug
     --sort <order>                           Sort by: created_at, -created_at, updated_at, -updated_at,
                                              scheduled_date, -scheduled_date, published_at, -published_at
@@ -2213,6 +2245,9 @@ COMMANDS:
     --media <media_ids>                      Comma-separated media IDs to attach
     --title <title>                          Draft title (internal only)
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
+    --plan <time>                            "next-free-slot" or future ISO datetime. Plans the
+                                             draft: dated but inert until confirmed (mutually
+                                             exclusive with --schedule)
     --tags <tag_slugs>                       Comma-separated tag slugs
     --reply-to <url>                         URL of X post to reply to
     --community <id>                         X community ID to post to
@@ -2235,6 +2270,10 @@ COMMANDS:
     --append, -a                             Append to existing thread instead of replacing
     --title <title>                          New draft title
     --schedule <time>                        "now", "next-free-slot", or ISO datetime
+    --plan <time|null>                       "next-free-slot" or future ISO datetime. Plans or
+                                             replans the draft (dated but inert, mutually exclusive
+                                             with --schedule); literal null returns a planned or
+                                             scheduled draft to plain draft status
     --tags <tag_slugs>                       Comma-separated tag slugs
     --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
@@ -2261,6 +2300,10 @@ COMMANDS:
 
   drafts:schedule <social_set_id> <draft_id> [options]  Schedule a draft
     --time <time>                            "next-free-slot" or ISO datetime (required)
+    --use-default                            Required when using default social set with single arg
+
+  drafts:plan <social_set_id> <draft_id> [options]  Plan a draft (dated but inert until confirmed)
+    --time <time>                            "next-free-slot" or future ISO datetime (required)
     --use-default                            Required when using default social set with single arg
 
   drafts:publish <social_set_id> <draft_id>  Publish a draft immediately
@@ -2397,7 +2440,16 @@ EXAMPLES:
   ./typefully.js drafts:create 123 --platform x --text "Scheduled post" --schedule next-free-slot
 
   # Schedule for specific time
-  ./typefully.js drafts:create 123 --platform x --text "Timed post" --schedule "2025-01-20T14:00:00Z"
+  ./typefully.js drafts:create 123 --platform x --text "Timed post" --schedule "2027-01-20T14:00:00Z"
+
+  # Plan a draft: on the queue/calendar but inert until confirmed
+  ./typefully.js drafts:create 123 --platform x --text "Pencil this in" --plan next-free-slot
+
+  # Confirm a planned draft into a real schedule
+  ./typefully.js drafts:schedule 123 456 --time "2027-01-20T14:00:00Z"
+
+  # List planned drafts sorted by date
+  ./typefully.js drafts:list 123 --status planned --sort scheduled_date
 
   # List scheduled drafts sorted by date
   ./typefully.js drafts:list 123 --status scheduled --sort scheduled_date
@@ -2497,6 +2549,7 @@ const COMMANDS = {
   'update-draft': cmdUpdateDraftAlias,
   'drafts:delete': cmdDraftsDelete,
   'drafts:schedule': cmdDraftsSchedule,
+  'drafts:plan': cmdDraftsPlan,
   'drafts:publish': cmdDraftsPublish,
   'queue:get': cmdQueueGet,
   'queue:schedule:get': cmdQueueScheduleGet,

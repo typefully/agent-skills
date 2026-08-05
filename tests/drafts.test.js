@@ -446,6 +446,124 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:plan sends plan_at payload', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, { plan_at: 'next-free-slot' });
+    },
+    json: { id: 'd1', status: 'planned' },
+  });
+    const result = await runCli(
+      ['drafts:plan', '9', 'd1', '--time', 'next-free-slot'],
+      {
+        cwd: sandbox.cwd,
+        env: {
+          HOME: sandbox.home,
+          TYPEFULLY_API_BASE: baseUrl,
+          TYPEFULLY_API_KEY: apiKey,
+        },
+      }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', status: 'planned' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:plan requires --time', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+    const result = await runCli(
+      ['drafts:plan', '9', 'd1'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--time is required (use "next-free-slot" or a future ISO datetime)',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create sends plan_at payload with --plan', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.equal(req.bodyJson.plan_at, 'next-free-slot');
+      assert.ok(!('publish_at' in req.bodyJson));
+    },
+    json: { id: 'd1', status: 'planned' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Pencil this in', '--plan', 'next-free-slot'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', status: 'planned' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create rejects --schedule combined with --plan', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'Hello', '--schedule', 'now', '--plan', 'next-free-slot'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--schedule and --plan are mutually exclusive - provide only one',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:update sends plan_at payload with --plan', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, { plan_at: '2027-01-20T14:00:00Z' });
+    },
+    json: { id: 'd1', status: 'planned' },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--plan', '2027-01-20T14:00:00Z'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', status: 'planned' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update --plan null clears the plan (sends plan_at: null)', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, { plan_at: null });
+    },
+    json: { id: 'd1', status: 'draft' },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--plan', 'null'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', status: 'draft' });
+    server.assertNoPendingExpectations();
+  }));
+
   it('drafts:list builds query params (status/tag/sort/limit)', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey 
   }) => {
@@ -513,7 +631,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required',
+      error: 'At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --plan, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required',
     });
     assert.equal(server.requests.length, 0);
   }));
