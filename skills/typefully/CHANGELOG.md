@@ -4,6 +4,13 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-08-12
+
+### Added
+
+- X draft guidance now accepts user-approved source packets, including TweetClaw
+  exports, while preserving Typefully's ownership of draft and publish actions.
+
 ## 2026-08-05
 
 ### Added
