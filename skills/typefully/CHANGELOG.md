@@ -4,6 +4,12 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-08-27
+
+### Added
+
+- X Article Markdown now supports fenced code blocks with optional language tags. Use a fence longer than any backtick run inside the code so content round-trips literally.
+
 ## 2026-08-05
 
 ### Added

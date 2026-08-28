@@ -41,6 +41,7 @@ Supported body blocks:
 - Italic
 - Strikethrough
 - Links
+- Fenced code blocks, with an optional single-token language after the opening fence. Code interiors stay literal; when code contains a backtick run, use a longer matching fence around the block.
 
 Supported block-only embeds, each alone on its own line:
 
@@ -54,7 +55,7 @@ Supported block-only embeds, each alone on its own line:
 
 Comprehensive supported markdown example:
 
-```md
+````md
 # Shipping Better Drafts
 
 Great articles start with a clear promise, then use structure to make the idea easy to scan.
@@ -77,12 +78,17 @@ Use body headings when the piece shifts to a new major section. A paragraph can 
 2. Shape the main sections
 3. Review the final flow
 
+```python
+def ship(draft):
+    return draft.publish()
+```
+
 <typ:media media_id="550e8400-e29b-41d4-a716-446655440000" />
 
 <typ:x-post url="https://x.com/user/status/1234567890" />
 
 End with a concise takeaway that tells readers what to do next.
-```
+````
 
 Comment anchors round-trip in article markdown:
 
@@ -251,7 +257,7 @@ Schedule or publish an existing article draft through the normal draft commands:
 
 ## Comments
 
-Create article comments against visible article text, not markdown syntax or embed tags:
+Create article comments against commentable article prose, not Markdown syntax, embed tags, or fenced-code text. X Article code blocks do not support comment anchors:
 
 ```bash
 ./scripts/typefully.js comments:create 456 \
