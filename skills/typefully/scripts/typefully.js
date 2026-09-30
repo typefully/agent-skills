@@ -809,60 +809,6 @@ async function cmdLinkedInOrganizationsResolve(args) {
   output(data);
 }
 
-async function cmdAnalyticsPostsList(args) {
-  const parsed = parseArgs(args, { 'include-replies': 'boolean', 'include_replies': 'boolean' });
-  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
-  const startDate = getRequiredStringArgFromParsed(parsed, 'start-date', ['start_date']);
-  const endDate = getRequiredStringArgFromParsed(parsed, 'end-date', ['end_date']);
-  const platform = (parsed.platform
-    ? coerceFlagValueToString(parsed.platform, '--platform')
-    : 'x').toLowerCase();
-  const includeReplies = Boolean(parsed['include-replies'] || parsed.include_replies);
-
-  if (platform !== 'x') {
-    error('Only X analytics are currently supported by the Typefully API', {
-      provided_platform: platform,
-      hint: 'Use --platform x or omit the flag',
-    });
-  }
-
-  const params = new URLSearchParams();
-  params.set('start_date', startDate);
-  params.set('end_date', endDate);
-  if (parsed.limit) params.set('limit', parsed.limit);
-  if (parsed.offset) params.set('offset', parsed.offset);
-  if (includeReplies) params.set('include_replies', 'true');
-
-  const data = await apiRequest('GET', `/social-sets/${socialSetId}/analytics/${platform}/posts?${params}`);
-  output(data);
-}
-
-async function cmdAnalyticsFollowersGet(args) {
-  const parsed = parseArgs(args);
-  const socialSetId = resolveSocialSetIdFromParsed(parsed, parsed._positional[0]);
-  const platform = (parsed.platform
-    ? coerceFlagValueToString(parsed.platform, '--platform')
-    : 'x').toLowerCase();
-  const startDate = getOptionalStringArgFromParsed(parsed, 'start-date', ['start_date']);
-  const endDate = getOptionalStringArgFromParsed(parsed, 'end-date', ['end_date']);
-
-  if (platform !== 'x') {
-    error('Only X analytics are currently supported by the Typefully API', {
-      provided_platform: platform,
-      hint: 'Use --platform x or omit the flag',
-    });
-  }
-
-  const params = new URLSearchParams();
-  if (startDate) params.set('start_date', startDate);
-  if (endDate) params.set('end_date', endDate);
-  const query = params.toString();
-  const endpoint = `/social-sets/${socialSetId}/analytics/${platform}/followers${query ? `?${query}` : ''}`;
-
-  const data = await apiRequest('GET', endpoint);
-  output(data);
-}
-
 function prompt(question) {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -2200,23 +2146,6 @@ COMMANDS:
                                              Resolve LinkedIn organization URL for mention syntax
     --organization-url <url>                 Public LinkedIn company/school URL
                                              Also accepts: --organization_url / --url
-  analytics:posts:list [social_set_id] [options]
-                                             List post analytics for a platform (uses default if ID omitted)
-    --platform <platform>                    Platform to query (default: x; currently only x is supported)
-    --start-date <YYYY-MM-DD>                Inclusive start date (required)
-                                             Also accepts: --start_date
-    --end-date <YYYY-MM-DD>                  Inclusive end date (required)
-                                             Also accepts: --end_date
-    --include-replies, --include_replies     Include X replies in results (excluded by default)
-    --limit <n>                              Max results per page (default: 25, max: 100)
-    --offset <n>                             Number of results to skip (default: 0)
-  analytics:followers:get [social_set_id] [options]
-                                             Get daily X follower counts (uses default if ID omitted)
-    --platform <platform>                    Platform to query (default: x; currently only x is supported)
-    --start-date <YYYY-MM-DD>                Inclusive start date (optional; default is last 30 days)
-                                             Also accepts: --start_date
-    --end-date <YYYY-MM-DD>                  Inclusive end date (optional; default is today)
-                                             Also accepts: --end_date
 
   drafts:list [social_set_id] [options]      List drafts (uses default if ID omitted)
     --status <status>                        Filter by: draft, planned, scheduled, published, error, publishing
@@ -2391,21 +2320,6 @@ EXAMPLES:
   # Same resolver using default social set
   ./typefully.js linkedin:organizations:resolve --url "https://www.linkedin.com/company/typefullycom/"
 
-  # Fetch X post analytics for a date range
-  ./typefully.js analytics:posts:list 123 --start-date 2026-03-01 --end-date 2026-03-07
-
-  # Same analytics query using default social set
-  ./typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07
-
-  # Include replies in X analytics results
-  ./typefully.js analytics:posts:list --start-date 2026-03-01 --end-date 2026-03-07 --include-replies
-
-  # Fetch X followers analytics for the default last 30 days
-  ./typefully.js analytics:followers:get 123
-
-  # Fetch X followers analytics for a date range
-  ./typefully.js analytics:followers:get 123 --start-date 2026-03-01 --end-date 2026-03-31
-
   # Use resolved mention syntax in a LinkedIn draft
   ./typefully.js drafts:create 123 --platform linkedin --text "Thanks @[Typefully](urn:li:organization:86779668) for the support."
 
@@ -2539,8 +2453,6 @@ const COMMANDS = {
   'social-sets:list': cmdSocialSetsList,
   'social-sets:get': cmdSocialSetsGet,
   'linkedin:organizations:resolve': cmdLinkedInOrganizationsResolve,
-  'analytics:posts:list': cmdAnalyticsPostsList,
-  'analytics:followers:get': cmdAnalyticsFollowersGet,
   'drafts:list': cmdDraftsList,
   'drafts:get': cmdDraftsGet,
   'drafts:create': cmdDraftsCreate,

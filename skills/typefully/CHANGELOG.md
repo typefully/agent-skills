@@ -87,27 +87,8 @@ The format is based on Keep a Changelog.
 
 ### Added
 
-- `analytics:followers:get [social_set_id]` to fetch X follower analytics, with optional `--start-date` / `--end-date` date filters and snake_case aliases.
-- `analytics:posts:list` now supports `--include-replies` (alias: `--include_replies`) to opt in to X reply posts.
 - `--paid-partnership` / `--paid_partnership` and `--made-with-ai` / `--made_with_ai` for X draft create/update disclosure flags.
 - Typefully skill docs now explain how to check `publishing_quota` with `social-sets:get`.
-
-### Changed
-
-- `analytics:posts:list` now matches the backend analytics default: replies are excluded unless you explicitly pass `--include-replies`.
-- Analytics docs and examples now explain X post analytics, X follower analytics, and the explicit reply-inclusion workflow.
-
-## 2026-03-17
-
-### Added
-
-- `analytics:posts:list [social_set_id] --start-date <YYYY-MM-DD> --end-date <YYYY-MM-DD>` to fetch X post analytics for an inclusive date range.
-- `analytics:posts:list` supports `--limit` / `--offset` pagination and `--start_date` / `--end_date` aliases.
-- Typefully skill docs now cover the X analytics workflow, command reference, examples, and metrics returned by the API.
-
-### Changed
-
-- `analytics:posts:list` now defaults `--platform` to `x` and returns a clear CLI error if another platform is requested, matching current API support.
 
 ## 2026-02-26
 
