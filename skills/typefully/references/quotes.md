@@ -7,7 +7,7 @@
 | Platform | Quote URL | Limits |
 |----------|-----------|--------|
 | X | `x.com` / `twitter.com` URL with `/status/<id>` | |
-| Threads | `threads.net` / `threads.com` post URL | Only the connected account's own posts, for now |
+| Threads | `threads.net` / `threads.com` post URL | Your own posts; other public profiles' recent posts once the Threads connection allows looking them up (the error says to reconnect Threads when needed) |
 | Bluesky | `bsky.app/profile/<handle>/post/<rkey>` | The author must allow quotes |
 | Mastodon | A status URL on any instance | Your server must support quotes and be able to see the post |
 | Substack | A note (`/note/c-<id>`) or post (`/p/<slug>`) URL, on any publication domain | Restack; Substack Notes take a single post |
