@@ -859,6 +859,103 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:create applies a native quote URL only to its own platform', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const quoteUrl = 'https://www.threads.com/@typefully/post/DdcPsEkH3NZ';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: { enabled: true, posts: [{ text: 'Hello' }] },
+          threads: { enabled: true, posts: [{ text: 'Hello', quote_post_url: quoteUrl }] },
+          bluesky: { enabled: true, posts: [{ text: 'Hello' }] },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x,threads,bluesky', '--text', 'Hello', '--quote-post-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create routes each quote URL to the platform the API accepts it on', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const cases = [
+    // Any x.com / twitter.com subdomain is X, as on the API.
+    { platforms: 'x,mastodon', url: 'https://m.twitter.com/user/status/123', expected: 'x' },
+    // Mastodon is federated: an unrecognized host is a Mastodon status...
+    { platforms: 'x,mastodon', url: 'https://hachyderm.io/@someone/113456789012345678', expected: 'mastodon' },
+    // ...even with a `/p/` path, unless Substack is targeted (Pixelfed posts look like this).
+    { platforms: 'mastodon', url: 'https://pixelfed.social/p/someone/123', expected: 'mastodon' },
+    // Substack publications on custom domains are recognized by their path.
+    { platforms: 'x,substack', url: 'https://www.lennysnewsletter.com/p/some-post', expected: 'substack' },
+  ];
+  for (const { platforms, url, expected } of cases) {
+    server.expect('POST', '/v2/social-sets/9/drafts', {
+      assert: (req) => {
+        const quoted = Object.entries(req.bodyJson.platforms)
+          .filter(([, config]) => config.posts.some(post => post.quote_post_url === url))
+          .map(([platform]) => platform);
+        assert.deepEqual(quoted, [expected], url);
+      },
+      json: { id: 'd1' },
+    });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', platforms, '--text', 'Hello', '--quote-post-url', url],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0, url);
+  }
+  server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create explains quote URLs it cannot route', withCliHarness(async ({
+    sandbox, server
+  }) => {
+  const cases = [
+    { platforms: 'x,threads', url: 'x.com/user/status/123', error: '--quote-post-url must be a full post URL starting with https://' },
+    { platforms: 'x,threads', url: 'https://hachyderm.io/@someone/1', error: 'Could not tell which platform --quote-post-url belongs to. If it is a Mastodon post, include mastodon in --platform.' },
+    { platforms: 'linkedin', url: 'https://hachyderm.io/@someone/1', error: '--quote-post-url is supported on X, Threads, Bluesky, Mastodon, and Substack posts. Include one of them in --platform or remove the quote flag.' },
+  ];
+  for (const { platforms, url, error } of cases) {
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', platforms, '--text', 'Hello', '--quote-post-url', url],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1, url);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { error }, url);
+  }
+  assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:create quotes from the first post of a thread only', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const quoteUrl = 'https://bsky.app/profile/typefully.com/post/3kabc123';
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      assert.deepEqual(req.bodyJson.platforms.bluesky.posts, [
+        { text: 'First', quote_post_url: quoteUrl },
+        { text: 'Second' },
+      ]);
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'bluesky', '--text', 'First\n---\nSecond', '--quote-post-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
   it('drafts:create accepts --quote-url alias', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey 
   }) => {
@@ -909,7 +1006,7 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
-  it('drafts:create errors when quote URL is used without X platform', withCliHarness(async ({
+  it('drafts:create errors when the quote URL platform is not targeted', withCliHarness(async ({
     sandbox, server 
   }) => {
   const result = await runCli(
@@ -918,7 +1015,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+      error: '--quote-post-url points to a post on X. Include x in --platform or remove the quote flag.',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -1562,6 +1659,160 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
+  it('drafts:update can set a native quote URL without changing text', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const quoteUrl = 'https://bsky.app/profile/typefully.com/post/3kabc123';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        bluesky: { enabled: true, posts: [{ text: 'Existing text' }] },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          bluesky: { enabled: true, posts: [{ text: 'Existing text', quote_post_url: quoteUrl }] },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--quote-post-url', quoteUrl],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update --append keeps each platform\'s own posts, quote included', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  // The API replaces posts wholesale, so a quote missing from the re-sent posts is deleted.
+  const quoteUrl = 'https://www.threads.com/@typefully/post/DdcPsEkH3NZ';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        x: { enabled: true, posts: [{ text: 'Quoting this' }] },
+        threads: { enabled: true, posts: [{ text: 'Quoting this', quote_post_url: quoteUrl }] },
+      },
+    },
+  });
+
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          x: { enabled: true, posts: [{ text: 'Quoting this' }, { text: 'One more' }] },
+          threads: {
+            enabled: true,
+            posts: [{ text: 'Quoting this', quote_post_url: quoteUrl }, { text: 'One more' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--append', '--text', 'One more'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update --append puts a new quote on the appended post only', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const firstQuote = 'https://www.threads.com/@typefully/post/AAA111';
+  const newQuote = 'https://www.threads.com/@typefully/post/BBB222';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    json: { id: 'd1', platforms: { threads: { enabled: true, posts: [{ text: 'One', quote_post_url: firstQuote }] } } },
+  });
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      assert.deepEqual(req.bodyJson.platforms.threads.posts, [
+        { text: 'One', quote_post_url: firstQuote },
+        { text: 'Two', quote_post_url: newQuote },
+      ]);
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--append', '--text', 'Two', '--quote-post-url', newQuote],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update --append drops a quote copied onto a platform without posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  const quoteUrl = 'https://www.threads.com/@typefully/post/AAA111';
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    json: { id: 'd1', platforms: { threads: { enabled: true, posts: [{ text: 'One', quote_post_url: quoteUrl }] } } },
+  });
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      assert.deepEqual(req.bodyJson.platforms, {
+        threads: { enabled: true, posts: [{ text: 'One', quote_post_url: quoteUrl }, { text: 'Two' }] },
+        bluesky: { enabled: true, posts: [{ text: 'One' }, { text: 'Two' }] },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'threads,bluesky', '--append', '--text', 'Two'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update keeps existing quotes on metadata-only updates', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  // Neither URL is one the CLI would route by host, so they must be kept as fetched.
+  const threadsQuote = 'https://www.threads.com/@typefully/post/AAA111';
+  const xQuote = 'https://m.twitter.com/user/status/123';
+  const cases = [
+    {
+      args: ['--hide-link-preview'],
+      draft: { threads: { enabled: true, posts: [{ text: 'One', quote_post_url: threadsQuote }] } },
+      expected: { threads: { enabled: true, posts: [{ text: 'One', quote_post_url: threadsQuote, hide_link_preview: true }] } },
+    },
+    {
+      args: ['--paid-partnership'],
+      draft: { x: { enabled: true, posts: [{ text: 'One', quote_post_url: xQuote }] } },
+      expected: { x: { enabled: true, posts: [{ text: 'One', quote_post_url: xQuote, paid_partnership: true }] } },
+    },
+  ];
+  for (const { args, draft, expected } of cases) {
+    server.expect('GET', '/v2/social-sets/9/drafts/d1', { json: { id: 'd1', platforms: draft } });
+    server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+      assert: (req) => assert.deepEqual(req.bodyJson.platforms, expected),
+      json: { id: 'd1', ok: true },
+    });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', ...args],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0, args.join(' '));
+  }
+  server.assertNoPendingExpectations();
+  }));
+
   it('drafts:update can hide the link preview without changing text', withCliHarness(async ({
     sandbox, server, baseUrl, apiKey
   }) => {
@@ -1679,7 +1930,7 @@ describe('drafts', () => {
     server.assertNoPendingExpectations();
   }));
 
-  it('drafts:update errors when quote URL is used without X platform', withCliHarness(async ({
+  it('drafts:update errors when the quote URL platform is not targeted', withCliHarness(async ({
     sandbox, server 
   }) => {
   const result = await runCli(
@@ -1688,7 +1939,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: '--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.',
+      error: '--quote-post-url points to a post on X. Include x in --platform or remove the quote flag.',
     });
     assert.equal(server.requests.length, 0);
   }));

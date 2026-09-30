@@ -447,9 +447,69 @@ function getQuotePostUrlFromParsed(parsed) {
   return primary || alias;
 }
 
-function addQuotePostUrl(posts, quotePostUrl) {
+// The quote goes on one post: the first, or the appended one with --append. Quoting from
+// every post of a thread is never what's meant, and on --append it would overwrite an
+// earlier post's own quote.
+function addQuotePostUrl(posts, quotePostUrl, index = 0) {
   if (!quotePostUrl) return posts;
-  return posts.map(post => ({ ...post, quote_post_url: quotePostUrl }));
+  return posts.map((post, i) => (i === index ? { ...post, quote_post_url: quotePostUrl } : post));
+}
+
+// Platforms whose posts accept quote_post_url (a restack on Substack). LinkedIn has no quote.
+const QUOTE_PLATFORM_NAMES = {
+  x: 'X',
+  threads: 'Threads',
+  bluesky: 'Bluesky',
+  mastodon: 'Mastodon',
+  substack: 'Substack',
+};
+
+function matchesHost(host, ...domains) {
+  return domains.some(domain => host === domain || host.endsWith(`.${domain}`));
+}
+
+// The platform a quote URL belongs to, by the host checks the API runs. Mastodon is
+// federated, so it has no host of its own (`null`). A Substack match on the path alone is
+// `weak`: publications run on custom domains, but other sites use `/p/` paths too (Pixelfed
+// posts quoted from Mastodon).
+function classifyQuoteUrl(parsedUrl) {
+  const host = parsedUrl.hostname.toLowerCase();
+  if (matchesHost(host, 'x.com', 'twitter.com')) return { platform: 'x' };
+  if (matchesHost(host, 'threads.net', 'threads.com')) return { platform: 'threads' };
+  if (matchesHost(host, 'bsky.app')) return { platform: 'bluesky' };
+  if (matchesHost(host, 'substack.com')) return { platform: 'substack' };
+  if (/\/note\/c-|\/p\//.test(parsedUrl.pathname)) return { platform: 'substack', weak: true };
+  return { platform: null };
+}
+
+// Which of the targeted platforms --quote-post-url applies to. A URL from a known host must
+// target its own platform; any other URL is a Mastodon status, or goes to the only
+// quote-capable platform so the API can validate it.
+function resolveQuotePlatform(platformList, quotePostUrl) {
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(quotePostUrl);
+  } catch {
+    // Reported below.
+  }
+  if (!parsedUrl || !['http:', 'https:'].includes(parsedUrl.protocol)) {
+    error('--quote-post-url must be a full post URL starting with https://');
+  }
+
+  const { platform: urlPlatform, weak } = classifyQuoteUrl(parsedUrl);
+  if (urlPlatform && (!weak || platformList.includes(urlPlatform))) {
+    if (!platformList.includes(urlPlatform)) {
+      error(`--quote-post-url points to a post on ${QUOTE_PLATFORM_NAMES[urlPlatform]}. Include ${urlPlatform} in --platform or remove the quote flag.`);
+    }
+    return urlPlatform;
+  }
+  const quotePlatforms = platformList.filter(p => QUOTE_PLATFORM_NAMES[p]);
+  if (quotePlatforms.includes('mastodon')) return 'mastodon';
+  if (quotePlatforms.length === 1) return quotePlatforms[0];
+  if (quotePlatforms.length === 0) {
+    error('--quote-post-url is supported on X, Threads, Bluesky, Mastodon, and Substack posts. Include one of them in --platform or remove the quote flag.');
+  }
+  error('Could not tell which platform --quote-post-url belongs to. If it is a Mastodon post, include mastodon in --platform.');
 }
 
 // Draft GET responses include response-only and platform-specific post fields
@@ -461,8 +521,13 @@ function sanitizePostForPlatform(post, platform) {
   if (Array.isArray(post.media_ids) && post.media_ids.length > 0) {
     clean.media_ids = post.media_ids;
   }
+  // Re-sent as fetched: the API replaces posts wholesale, so a dropped quote is deleted.
+  // Posts copied from another platform arrive here already stripped of theirs.
+  if (post.quote_post_url && QUOTE_PLATFORM_NAMES[platform]) {
+    clean.quote_post_url = post.quote_post_url;
+  }
   if (platform === 'x') {
-    for (const field of ['quote_post_url', 'subscribers_only', 'paid_partnership', 'made_with_ai']) {
+    for (const field of ['subscribers_only', 'paid_partnership', 'made_with_ai']) {
       if (post[field] !== undefined && post[field] !== null && post[field] !== false) {
         clean[field] = post[field];
       }
@@ -504,11 +569,8 @@ function addXContentDisclosures(posts, disclosures) {
   });
 }
 
-function validateXOnlyPostOptions(platformList, { quotePostUrl, disclosures }) {
-  if ((quotePostUrl || disclosures.hasAny) && !platformList.includes('x')) {
-    if (quotePostUrl) {
-      error('--quote-post-url is only supported for X posts. Include x in --platform or remove the quote flag.');
-    }
+function validateXContentDisclosures(platformList, disclosures) {
+  if (disclosures.hasAny && !platformList.includes('x')) {
     error('--paid-partnership/--made-with-ai is only supported for X posts. Include x in --platform or remove the X-only flag.');
   }
 }
@@ -1285,10 +1347,8 @@ async function cmdDraftsCreate(args) {
       error('--text or --file is required');
     }
 
-    validateXOnlyPostOptions(platformList, {
-      quotePostUrl,
-      disclosures: xContentDisclosures,
-    });
+    const quotePlatform = quotePostUrl ? resolveQuotePlatform(platformList, quotePostUrl) : null;
+    validateXContentDisclosures(platformList, xContentDisclosures);
     validateHideLinkPreviewOption(platformList, hideLinkPreview);
 
     // Split text into posts (thread support)
@@ -1308,9 +1368,12 @@ async function cmdDraftsCreate(args) {
     });
 
     for (const platform of platformList) {
-      let postsArray = platform === 'x'
-        ? addXContentDisclosures(addQuotePostUrl(basePostsArray, quotePostUrl), xContentDisclosures)
+      let postsArray = platform === quotePlatform
+        ? addQuotePostUrl(basePostsArray, quotePostUrl)
         : basePostsArray;
+      if (platform === 'x') {
+        postsArray = addXContentDisclosures(postsArray, xContentDisclosures);
+      }
       if (HIDE_LINK_PREVIEW_PLATFORMS.includes(platform)) {
         postsArray = addHideLinkPreview(postsArray, hideLinkPreview);
       }
@@ -1427,10 +1490,9 @@ async function cmdDraftsUpdate(args) {
   );
   if (shouldUpdatePosts) {
     if (explicitPlatformList) {
-      validateXOnlyPostOptions(explicitPlatformList, {
-        quotePostUrl,
-        disclosures: xContentDisclosures,
-      });
+      // Fail fast, before fetching the draft; the full checks run once platforms are known.
+      if (quotePostUrl) resolveQuotePlatform(explicitPlatformList, quotePostUrl);
+      validateXContentDisclosures(explicitPlatformList, xContentDisclosures);
       validateHideLinkPreviewOption(explicitPlatformList, hideLinkPreview);
     }
 
@@ -1462,31 +1524,32 @@ async function cmdDraftsUpdate(args) {
       }
     }
 
-    validateXOnlyPostOptions(platformList, {
-      quotePostUrl,
-      disclosures: xContentDisclosures,
-    });
+    const quotePlatform = quotePostUrl ? resolveQuotePlatform(platformList, quotePostUrl) : null;
+    validateXContentDisclosures(platformList, xContentDisclosures);
     validateHideLinkPreviewOption(platformList, hideLinkPreview);
 
     let postsArray;
+    // --append adds this post to each platform's own posts, so per-platform content (a
+    // quote, an edited copy) survives. A platform with no posts yet starts from the first
+    // enabled platform's posts.
+    let appendedPost = null;
+    let appendFallbackPosts = [];
 
     if (text) {
       if (parsed.append) {
-        // Extract posts from the first enabled platform
-        let existingPosts = [];
         for (const [, config] of Object.entries(existing.platforms || {})) {
           if (config && config.enabled && Array.isArray(config.posts) && config.posts.length > 0) {
-            existingPosts = config.posts;
+            // Another platform's quote URL is one this platform would reject.
+            appendFallbackPosts = config.posts.map(({ quote_post_url: _quote, ...post }) => post);
             break;
           }
         }
 
-        // Append new post
-        const newPost = { text };
+        appendedPost = { text };
         if (mediaIds.length > 0) {
-          newPost.media_ids = mediaIds;
+          appendedPost.media_ids = mediaIds;
         }
-        postsArray = [...existingPosts, newPost];
+        postsArray = null;
       } else {
         // Replace with new posts
         const posts = splitThreadText(text);
@@ -1499,19 +1562,20 @@ async function cmdDraftsUpdate(args) {
         });
       }
     } else if (quotePostUrl || xContentDisclosures.hasAny) {
-      // X-only metadata update: preserve existing X posts and add quote/disclosure attrs.
+      // Metadata-only update: keep each affected platform's existing posts and add the
+      // quote and/or X disclosure attrs to them.
       if (hideLinkPreview) {
-        error('Cannot combine --hide-link-preview with X-only flags unless --text is provided');
+        error('Cannot combine --hide-link-preview with --quote-post-url, --paid-partnership, or --made-with-ai unless --text is provided');
       }
-      const existingXPosts = existing.platforms?.x?.posts;
-      if (!Array.isArray(existingXPosts) || existingXPosts.length === 0) {
-        if (quotePostUrl && !xContentDisclosures.hasAny) {
-          error('Cannot apply --quote-post-url because this draft has no existing X posts');
-        }
+      const hasExistingPosts = p => Array.isArray(existing.platforms?.[p]?.posts) && existing.platforms[p].posts.length > 0;
+      if (quotePlatform && !hasExistingPosts(quotePlatform)) {
+        error(`Cannot apply --quote-post-url because this draft has no existing ${QUOTE_PLATFORM_NAMES[quotePlatform]} posts`);
+      }
+      if (xContentDisclosures.hasAny && !hasExistingPosts('x')) {
         error('Cannot apply X-only post options because this draft has no existing X posts');
       }
-      postsArray = existingXPosts;
-      platformList = ['x'];
+      postsArray = null;
+      platformList = [...new Set([quotePlatform, xContentDisclosures.hasAny ? 'x' : null].filter(Boolean))];
     } else {
       // --hide-link-preview only: preserve existing posts on platforms that support suppression.
       const targets = platformList.filter(p =>
@@ -1529,11 +1593,18 @@ async function cmdDraftsUpdate(args) {
     // Build platforms object
     const platformsObj = {};
     for (const p of platformList) {
-      const sourcePosts = postsArray ?? existing.platforms?.[p]?.posts ?? [];
+      const ownPosts = existing.platforms?.[p]?.posts;
+      const hasOwnPosts = Array.isArray(ownPosts) && ownPosts.length > 0;
+      const sourcePosts = appendedPost
+        ? [...(hasOwnPosts ? ownPosts : appendFallbackPosts), appendedPost]
+        : postsArray ?? ownPosts ?? [];
       const sanitizedPosts = sourcePosts.map(post => sanitizePostForPlatform(post, p));
-      let platformPosts = p === 'x'
-        ? addXContentDisclosures(addQuotePostUrl(sanitizedPosts, quotePostUrl), xContentDisclosures)
+      let platformPosts = p === quotePlatform
+        ? addQuotePostUrl(sanitizedPosts, quotePostUrl, appendedPost ? sanitizedPosts.length - 1 : 0)
         : sanitizedPosts;
+      if (p === 'x') {
+        platformPosts = addXContentDisclosures(platformPosts, xContentDisclosures);
+      }
       if (HIDE_LINK_PREVIEW_PLATFORMS.includes(p)) {
         platformPosts = addHideLinkPreview(platformPosts, hideLinkPreview);
       }
@@ -2180,7 +2251,8 @@ COMMANDS:
     --tags <tag_slugs>                       Comma-separated tag slugs
     --reply-to <url>                         URL of X post to reply to
     --community <id>                         X community ID to post to
-    --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --quote-post-url, --quote-url <url>      Quote a post (X, Threads, Bluesky, Mastodon) or restack
+                                             on Substack, on the URL's platform only
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --hide-link-preview                      Suppress the link-preview card (LinkedIn/Threads only).
@@ -2204,7 +2276,8 @@ COMMANDS:
                                              with --schedule); literal null returns a planned or
                                              scheduled draft to plain draft status
     --tags <tag_slugs>                       Comma-separated tag slugs
-    --quote-post-url, --quote-url <url>      Quote an X post URL (X only)
+    --quote-post-url, --quote-url <url>      Quote a post (X, Threads, Bluesky, Mastodon) or restack
+                                             on Substack, on the URL's platform only
     --paid-partnership, --paid_partnership   Label X posts as paid partnership
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --hide-link-preview                      Suppress the link-preview card (LinkedIn/Threads only).
@@ -2397,6 +2470,9 @@ EXAMPLES:
 
   # Create a quote post on X
   ./typefully.js drafts:create 123 --platform x --text "My take on this" --quote-post-url "https://x.com/user/status/1234567890123456789"
+
+  # Quote a Bluesky post (Threads, Mastodon, and Substack restacks work the same way)
+  ./typefully.js drafts:create 123 --platform bluesky --text "Worth a read" --quote-post-url "https://bsky.app/profile/user.bsky.social/post/3kabc123"
 
   # Create an X post with content disclosure labels
   ./typefully.js drafts:create 123 --platform x --text "Sponsored AI-assisted update" --paid-partnership --made-with-ai

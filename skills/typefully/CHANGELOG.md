@@ -4,6 +4,21 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-09-30
+
+### Added
+
+- `--quote-post-url` now quotes Threads, Bluesky, and Mastodon posts and restacks Substack notes and posts, not just X posts. In a multi-platform draft, the quote applies only to the platform the URL belongs to. See `references/quotes.md` for each platform's limits.
+
+### Changed
+
+- `--quote-post-url` now quotes from the first post of a thread, or from the new post with `--append`, instead of from every post.
+- `drafts:update --append` now appends to each platform's own posts instead of copying the first platform's posts to every platform, so per-platform edits and quotes survive.
+
+### Fixed
+
+- `drafts:update --append` no longer deletes an existing Threads, Bluesky, Mastodon, or Substack quote, and `--hide-link-preview` no longer deletes an existing Threads or Substack quote.
+
 ## 2026-08-27
 
 ### Added
