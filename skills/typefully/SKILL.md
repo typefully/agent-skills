@@ -6,7 +6,7 @@ description: >
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, Mastodon, or
   Substack Notes, or when the user drops a Typefully draft URL such as
   https://typefully.com/?a=<social_set_id>&d=<draft_id>.
-last-updated: 2026-09-30
+last-updated: 2026-10-14
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -154,6 +154,7 @@ To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppr
 | "Check available tags" | `tags:list` |
 | "Check my publishing quota" | `social-sets:get` → `publishing_quota` |
 | "Draft an X Article" | See [`references/platforms/x-articles.md`](references/platforms/x-articles.md) |
+| "Put the link in a LinkedIn first comment" | `drafts:create --platform linkedin --text "..." --linkedin-first-comment "..."` |
 | "Mention a company on LinkedIn" | See [`references/platforms/linkedin.md`](references/platforms/linkedin.md) |
 | "Comment on / resolve a comment" | See [`references/comments.md`](references/comments.md) |
 
@@ -205,6 +206,7 @@ Add any of these flags to a `drafts:create` or `drafts:update` command. The **Ap
 | `--plan <iso\|next-free-slot>` | Plan the draft: dated but inert until confirmed (mutually exclusive with `--schedule`; `null` on update returns it to plain draft) | create, update |
 | `--hide-link-preview` | Suppress the link-preview card (LinkedIn/Threads/Substack only — see [Link previews](#link-previews)) | create, update |
 | `--quote-post-url <url>` | Quote another post, or restack on Substack, on the URL's platform (see [`quotes.md`](references/quotes.md)); pass it again when replacing text with `--text` | create, update |
+| `--linkedin-first-comment "<text>"` | LinkedIn first comment, posted right after publishing (`null` removes it on update) | create, update |
 | `--exclude-comment-markers` | Render response without anchors (display only; validation still applies) | update |
 | `--force-overwrite-comments` | Destructive last resort — see [`comments.md`](references/comments.md) | update |
 
@@ -215,7 +217,7 @@ For example, combine the base command with flags like this:
 ./scripts/typefully.js drafts:update 456 --text "Revised copy" --media abc-123 --use-default
 ```
 
-> X-only draft flags (`--reply-to`, `--community`, `--paid-partnership`, `--made-with-ai`): see [`platforms/x.md`](references/platforms/x.md). X Article flags (`--content-markdown`, `--cover-media-id`): see [`platforms/x-articles.md`](references/platforms/x-articles.md).
+> X-only draft flags (`--reply-to`, `--community`, `--paid-partnership`, `--made-with-ai`): see [`platforms/x.md`](references/platforms/x.md). LinkedIn-only flags (`--linkedin-first-comment`): see [`platforms/linkedin.md`](references/platforms/linkedin.md). X Article flags (`--content-markdown`, `--cover-media-id`): see [`platforms/x-articles.md`](references/platforms/x-articles.md).
 
 ### Scheduling & publishing
 
