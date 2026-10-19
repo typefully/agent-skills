@@ -36,6 +36,8 @@ const X_ARTICLE_POST_ONLY_FLAGS = [
   ['paid_partnership', '--paid_partnership'],
   ['made-with-ai', '--made-with-ai'],
   ['made_with_ai', '--made_with_ai'],
+  ['linkedin-first-comment', '--linkedin-first-comment'],
+  ['linkedin_first_comment', '--linkedin_first_comment'],
 ];
 
 function normalizeApiBase(value) {
@@ -590,6 +592,19 @@ function addHideLinkPreview(posts, hideLinkPreview) {
 function validateHideLinkPreviewOption(platformList, hideLinkPreview) {
   if (hideLinkPreview && !platformList.some(p => HIDE_LINK_PREVIEW_PLATFORMS.includes(p))) {
     error('--hide-link-preview is only supported for LinkedIn, Threads, and Substack posts. Include linkedin, threads, or substack in --platform or remove the flag.');
+  }
+}
+
+function getLinkedInFirstCommentFromParsed(parsed) {
+  const flag = ['linkedin-first-comment', 'linkedin_first_comment'].find(key => hasParsedArg(parsed, key));
+  if (!flag) return undefined;
+  const value = coerceFlagValueToString(parsed[flag], `--${flag}`, { allowEmpty: true });
+  return value.trim() === '' || value === 'null' ? null : value;
+}
+
+function validateLinkedInFirstCommentOption(platformList, firstComment) {
+  if (firstComment !== undefined && !platformList.includes('linkedin')) {
+    error('--linkedin-first-comment is only supported for LinkedIn posts. Include linkedin in --platform or remove the flag.');
   }
 }
 
@@ -1303,6 +1318,7 @@ async function cmdDraftsCreate(args) {
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
   const hideLinkPreview = getHideLinkPreviewFromParsed(parsed);
+  const firstComment = getLinkedInFirstCommentFromParsed(parsed);
 
   // Determine platform(s)
   let platforms = parsed.platform;
@@ -1333,6 +1349,7 @@ async function cmdDraftsCreate(args) {
 
   const platformList = parsePlatformList(platforms);
   validateXArticlePlatformUsage(platformList, parsed);
+  validateLinkedInFirstCommentOption(platformList, firstComment);
 
   // Build request body
   const platformsObj = {};
@@ -1391,6 +1408,9 @@ async function cmdDraftsCreate(args) {
         if (parsed.community) {
           platformConfig.settings.community_id = parsed.community;
         }
+      }
+      if (platform === 'linkedin' && firstComment !== undefined) {
+        platformConfig.settings = { first_comment: firstComment };
       }
 
       platformsObj[platform] = platformConfig;
@@ -1453,6 +1473,7 @@ async function cmdDraftsUpdate(args) {
   const quotePostUrl = getQuotePostUrlFromParsed(parsed);
   const xContentDisclosures = getXContentDisclosuresFromParsed(parsed);
   const hideLinkPreview = getHideLinkPreviewFromParsed(parsed);
+  const firstComment = getLinkedInFirstCommentFromParsed(parsed);
 
   const body = {};
   const explicitPlatformList = parsed.platform
@@ -1465,6 +1486,7 @@ async function cmdDraftsUpdate(args) {
 
   if (explicitPlatformList) {
     validateXArticlePlatformUsage(explicitPlatformList, parsed);
+    validateLinkedInFirstCommentOption(explicitPlatformList, firstComment);
   }
 
   const shouldUpdateArticle = Boolean(
@@ -1485,6 +1507,7 @@ async function cmdDraftsUpdate(args) {
     text = getPostTextFromParsed(parsed);
   }
 
+  let existing = null;
   const shouldUpdatePosts = Boolean(
     !shouldUpdateArticle && (text || quotePostUrl || xContentDisclosures.hasAny || hideLinkPreview)
   );
@@ -1500,7 +1523,7 @@ async function cmdDraftsUpdate(args) {
     const mediaIds = parsed.media ? parsed.media.split(',').map(m => m.trim()) : [];
 
     // Fetch existing draft to determine platforms (and for --append, to get posts)
-    const existing = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
+    existing = await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
 
     // Determine which platforms to update
     let platformList;
@@ -1617,6 +1640,21 @@ async function cmdDraftsUpdate(args) {
     body.platforms = platformsObj;
   }
 
+  if (firstComment !== undefined) {
+    if (!body.platforms?.linkedin) {
+      existing ??= await apiRequest('GET', `/social-sets/${socialSetId}/drafts/${draftId}`);
+      const linkedinPosts = existing.platforms?.linkedin?.posts;
+      if (!Array.isArray(linkedinPosts) || linkedinPosts.length === 0) {
+        error('Cannot set --linkedin-first-comment because this draft has no existing LinkedIn posts');
+      }
+      body.platforms = {
+        ...body.platforms,
+        linkedin: { enabled: true, posts: linkedinPosts.map(post => sanitizePostForPlatform(post, 'linkedin')) },
+      };
+    }
+    body.platforms.linkedin.settings = { first_comment: firstComment };
+  }
+
   if (parsed.title) {
     body.draft_title = parsed.title;
   }
@@ -1651,7 +1689,7 @@ async function cmdDraftsUpdate(args) {
   }
 
   if (Object.keys(body).length === 0) {
-    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --plan, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required');
+    error('At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --plan, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, --linkedin-first-comment, or --force-overwrite-comments is required');
   }
 
   const params = new URLSearchParams();
@@ -1720,6 +1758,8 @@ async function cmdCreateDraftAlias(args) {
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
   if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
   if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
+  const firstComment = getLinkedInFirstCommentFromParsed(parsed);
+  if (firstComment !== undefined) forwarded.push('--linkedin-first-comment', firstComment ?? 'null');
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -1768,6 +1808,8 @@ async function cmdUpdateDraftAlias(args) {
   if (quotePostUrl) forwarded.push('--quote-post-url', quotePostUrl);
   if (parsed['paid-partnership'] || parsed.paid_partnership) forwarded.push('--paid-partnership');
   if (parsed['made-with-ai'] || parsed.made_with_ai) forwarded.push('--made-with-ai');
+  const firstComment = getLinkedInFirstCommentFromParsed(parsed);
+  if (firstComment !== undefined) forwarded.push('--linkedin-first-comment', firstComment ?? 'null');
   if (parsed.share) forwarded.push('--share');
   pushStringFlag(forwarded, parsed, 'notes', '--notes');
 
@@ -2257,6 +2299,7 @@ COMMANDS:
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --hide-link-preview                      Suppress the link-preview card (LinkedIn/Threads only).
                                              Also accepts: --hide_link_preview
+    --linkedin-first-comment <text>          Comment posted on the LinkedIn post right after it publishes
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
 
@@ -2282,6 +2325,7 @@ COMMANDS:
     --made-with-ai, --made_with_ai           Label X posts as made with AI
     --hide-link-preview                      Suppress the link-preview card (LinkedIn/Threads only).
                                              Also accepts: --hide_link_preview
+    --linkedin-first-comment <text|null>     Set the LinkedIn first comment; literal null clears it
     --share                                  Generate a public share URL for the draft
     --notes, --scratchpad <text>             Internal notes/scratchpad for the draft
     --exclude-comment-markers                Render response posts[*].text without
@@ -2413,6 +2457,9 @@ EXAMPLES:
 
   # Create a cross-platform post (specific platforms)
   ./typefully.js drafts:create --platform x,linkedin --text "Big announcement!"
+
+  # Add a LinkedIn first comment, posted right after the post publishes
+  ./typefully.js drafts:create 123 --platform linkedin --text "New post is live" --linkedin-first-comment "Link: https://example.com"
 
   # Create a post on all connected platforms
   ./typefully.js drafts:create --all --text "Posting everywhere!"

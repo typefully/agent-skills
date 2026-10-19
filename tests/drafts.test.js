@@ -631,7 +631,7 @@ describe('drafts', () => {
     );
     assert.equal(result.code, 1);
     assert.deepEqual(parseJsonOrNull(result.stdout), {
-      error: 'At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --plan, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, or --force-overwrite-comments is required',
+      error: 'At least one of --text, --file, --content-markdown, --cover-media-id, --title, --schedule, --plan, --share, --notes, --tags, --quote-post-url, --paid-partnership, --made-with-ai, --hide-link-preview, --linkedin-first-comment, or --force-overwrite-comments is required',
     });
     assert.equal(server.requests.length, 0);
   }));
@@ -1885,6 +1885,214 @@ describe('drafts', () => {
       error: '--hide-link-preview is only supported for LinkedIn, Threads, and Substack posts. Include linkedin, threads, or substack in --platform or remove the flag.',
     });
     assert.equal(server.requests.length, 1);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create puts --linkedin-first-comment only on LinkedIn settings', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('POST', '/v2/social-sets/9/drafts', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'New post' }],
+            settings: { first_comment: 'Link: https://example.com' },
+          },
+          x: {
+            enabled: true,
+            posts: [{ text: 'New post' }],
+          },
+        },
+      });
+    },
+    json: { id: 'd1' },
+  });
+    const result = await runCli(
+      ['drafts:create', '9', '--platform', 'linkedin,x', '--text', 'New post', '--linkedin-first-comment', 'Link: https://example.com'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1' });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:create errors when --linkedin-first-comment is used without LinkedIn', withCliHarness(async ({
+    sandbox, server, baseUrl
+  }) => {
+  const result = await runCli(
+      ['drafts:create', '9', '--platform', 'x', '--text', 'New post', '--linkedin-first-comment', 'Link: https://example.com'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--linkedin-first-comment is only supported for LinkedIn posts. Include linkedin in --platform or remove the flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('drafts:update sets --linkedin-first-comment alone by re-sending sanitized LinkedIn posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    assert: authAssertFactory(apiKey),
+    json: {
+      id: 'd1',
+      platforms: {
+        linkedin: {
+          enabled: true,
+          posts: [{ text: 'LinkedIn post', subscribers_only: false, hide_link_preview: true }],
+          settings: null,
+        },
+        x: { enabled: true, posts: [{ text: 'X post' }] },
+      },
+    },
+  });
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      authAssertFactory(apiKey)(req);
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'LinkedIn post', hide_link_preview: true }],
+            settings: { first_comment: 'Link: https://example.com' },
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--linkedin-first-comment', 'Link: https://example.com'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.deepEqual(parseJsonOrNull(result.stdout), { id: 'd1', ok: true });
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update --linkedin-first-comment null clears the comment', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    json: {
+      id: 'd1',
+      platforms: {
+        linkedin: { enabled: true, posts: [{ text: 'LinkedIn post' }], settings: { first_comment: 'Old' } },
+      },
+    },
+  });
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'LinkedIn post' }],
+            settings: { first_comment: null },
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--linkedin-first-comment', 'null'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update errors on --linkedin-first-comment when the draft has no LinkedIn posts', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    json: { id: 'd1', platforms: { x: { enabled: true, posts: [{ text: 'X post' }] }, linkedin: null } },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--linkedin-first-comment', 'Link: https://example.com'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: 'Cannot set --linkedin-first-comment because this draft has no existing LinkedIn posts',
+    });
+    assert.equal(server.requests.length, 1);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update combines new LinkedIn text with --linkedin-first-comment in one GET', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    json: { id: 'd1', platforms: { linkedin: { enabled: true, posts: [{ text: 'Old' }] } } },
+  });
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'New' }],
+            settings: { first_comment: 'c' },
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'linkedin', '--text', 'New', '--linkedin-first-comment', 'c'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
+    assert.equal(server.requests.length, 2);
+    server.assertNoPendingExpectations();
+  }));
+
+  it('drafts:update errors on --linkedin-first-comment when --platform excludes LinkedIn', withCliHarness(async ({
+    sandbox, server, baseUrl
+  }) => {
+  const result = await runCli(
+      ['drafts:update', '9', 'd1', '--platform', 'x', '--linkedin-first-comment', 'c'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: 'typ_test_key' } }
+    );
+    assert.equal(result.code, 1);
+    assert.deepEqual(parseJsonOrNull(result.stdout), {
+      error: '--linkedin-first-comment is only supported for LinkedIn posts. Include linkedin in --platform or remove the flag.',
+    });
+    assert.equal(server.requests.length, 0);
+  }));
+
+  it('update-draft alias forwards --linkedin_first_comment', withCliHarness(async ({
+    sandbox, server, baseUrl, apiKey
+  }) => {
+  server.expect('GET', '/v2/social-sets/9/drafts/d1', {
+    json: { id: 'd1', platforms: { linkedin: { enabled: true, posts: [{ text: 'LinkedIn post' }] } } },
+  });
+  server.expect('PATCH', '/v2/social-sets/9/drafts/d1', {
+    assert: (req) => {
+      assert.deepEqual(req.bodyJson, {
+        platforms: {
+          linkedin: {
+            enabled: true,
+            posts: [{ text: 'LinkedIn post' }],
+            settings: { first_comment: 'c' },
+          },
+        },
+      });
+    },
+    json: { id: 'd1', ok: true },
+  });
+    const result = await runCli(
+      ['update-draft', 'd1', '--social-set-id', '9', '--linkedin_first_comment', 'c'],
+      { cwd: sandbox.cwd, env: { HOME: sandbox.home, TYPEFULLY_API_BASE: baseUrl, TYPEFULLY_API_KEY: apiKey } }
+    );
+    assert.equal(result.code, 0);
     server.assertNoPendingExpectations();
   }));
 
