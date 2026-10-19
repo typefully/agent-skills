@@ -6,7 +6,7 @@ description: >
   social media content for Twitter/X, LinkedIn, Threads, Bluesky, Mastodon, or
   Substack Notes, or when the user drops a Typefully draft URL such as
   https://typefully.com/?a=<social_set_id>&d=<draft_id>.
-last-updated: 2026-09-30
+last-updated: 2026-10-19
 allowed-tools: Bash(./scripts/typefully.js:*)
 ---
 
@@ -48,7 +48,7 @@ Load these only when the task needs them:
 | [`references/comments.md`](references/comments.md) | Add, reply to, resolve, or delete comments on a draft, or edit a draft that already has comments |
 | [`references/quotes.md`](references/quotes.md) | Quote another post on X, Threads, Bluesky, or Mastodon, or restack one on Substack |
 | [`references/platforms/x.md`](references/platforms/x.md) | Reply to an X (formerly Twitter) post, post to a community, or add disclosure labels |
-| [`references/platforms/linkedin.md`](references/platforms/linkedin.md) | Mention a company or person on LinkedIn |
+| [`references/platforms/linkedin.md`](references/platforms/linkedin.md) | Mention a company or person on LinkedIn, or add a LinkedIn first comment |
 | [`references/platforms/x-articles.md`](references/platforms/x-articles.md) | Write or edit a long-form X Article (standalone platform) |
 
 ---
@@ -155,6 +155,7 @@ To publish the URL as plain text with no card, pass `--hide-link-preview`. Suppr
 | "Check my publishing quota" | `social-sets:get` → `publishing_quota` |
 | "Draft an X Article" | See [`references/platforms/x-articles.md`](references/platforms/x-articles.md) |
 | "Mention a company on LinkedIn" | See [`references/platforms/linkedin.md`](references/platforms/linkedin.md) |
+| "Add a first comment to my LinkedIn post" | See [`references/platforms/linkedin.md`](references/platforms/linkedin.md) |
 | "Comment on / resolve a comment" | See [`references/comments.md`](references/comments.md) |
 
 ---
@@ -165,7 +166,7 @@ All commands output JSON. Every `[social_set_id]` is optional and falls back to 
 
 > **Safety note**: `drafts:get`, `drafts:update`, `drafts:delete`, `drafts:schedule`, `drafts:plan`, and `drafts:publish` require `--use-default` when you pass a single argument (the draft_id) while a default social set is configured.
 
-Platform- and workflow-specific commands live in their guides: [`quotes.md`](references/quotes.md), [`platforms/x.md`](references/platforms/x.md) (replies, communities, disclosures), [`platforms/linkedin.md`](references/platforms/linkedin.md) (mentions), [`platforms/x-articles.md`](references/platforms/x-articles.md), [`comments.md`](references/comments.md), and [`setup.md`](references/setup.md).
+Platform- and workflow-specific commands live in their guides: [`quotes.md`](references/quotes.md), [`platforms/x.md`](references/platforms/x.md) (replies, communities, disclosures), [`platforms/linkedin.md`](references/platforms/linkedin.md) (mentions, first comments), [`platforms/x-articles.md`](references/platforms/x-articles.md), [`comments.md`](references/comments.md), and [`setup.md`](references/setup.md).
 
 ### User & social sets
 
@@ -215,7 +216,7 @@ For example, combine the base command with flags like this:
 ./scripts/typefully.js drafts:update 456 --text "Revised copy" --media abc-123 --use-default
 ```
 
-> X-only draft flags (`--reply-to`, `--community`, `--paid-partnership`, `--made-with-ai`): see [`platforms/x.md`](references/platforms/x.md). X Article flags (`--content-markdown`, `--cover-media-id`): see [`platforms/x-articles.md`](references/platforms/x-articles.md).
+> X-only draft flags (`--reply-to`, `--community`, `--paid-partnership`, `--made-with-ai`): see [`platforms/x.md`](references/platforms/x.md). X Article flags (`--content-markdown`, `--cover-media-id`): see [`platforms/x-articles.md`](references/platforms/x-articles.md). LinkedIn first comment (`--linkedin-first-comment`): see [`platforms/linkedin.md`](references/platforms/linkedin.md).
 
 ### Scheduling & publishing
 
