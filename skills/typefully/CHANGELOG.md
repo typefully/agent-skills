@@ -4,6 +4,12 @@ All notable user-facing changes to the Typefully skill and its CLI are documente
 
 The format is based on Keep a Changelog.
 
+## 2026-10-27
+
+### Changed
+
+- Substack Notes now accept video: a note takes up to 6 images/GIFs, or a single video on its own (max 512 MB, 15 minutes). A video can't be mixed with images or GIFs, or combined with `--quote-post-url` (restack).
+
 ## 2026-10-19
 
 ### Added

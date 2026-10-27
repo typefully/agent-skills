@@ -10,7 +10,7 @@
 | Threads | `threads.net` / `threads.com` post URL | Your own posts; other public profiles' recent posts once the Threads connection allows looking them up (the error says to reconnect Threads when needed) |
 | Bluesky | `bsky.app/profile/<handle>/post/<rkey>` | The author must allow quotes |
 | Mastodon | A status URL on any instance | Your server must support quotes and be able to see the post |
-| Substack | A note (`/note/c-<id>`) or post (`/p/<slug>`) URL, on any publication domain | Restack; Substack Notes take a single post |
+| Substack | A note (`/note/c-<id>`) or post (`/p/<slug>`) URL, on any publication domain | Restack; Substack Notes take a single post, and a restack can't carry a video |
 
 LinkedIn has no quote. Mastodon is federated, so a URL from any other host counts as a Mastodon status when the draft includes Mastodon; otherwise it goes to the draft's only quote-capable platform.
 
